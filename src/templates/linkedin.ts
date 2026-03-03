@@ -4,10 +4,13 @@
  * Proven approach (2026-03-03): Raw HTTP with Chrome-like headers gets HTTP 200.
  * Key data lives in <title> and og:* meta tags. Full JD is in the description__text div.
  *
- * Title format: "{company} hiring {title} in {location} | LinkedIn"
- * og:title: same format
- * og:description: truncated job description
- * Full JD: <div class="description__text"> or <div class="show-more-less-html__markup">
+ * Title tag varies by subdomain locale:
+ *   www.linkedin.com  → "{company} hiring {title} in {location} | LinkedIn"
+ *   ch.linkedin.com   → "{company} sucht {title} in {location} | LinkedIn"
+ *   de.linkedin.com   → "{company} sucht {title} in {location} | LinkedIn"
+ *   fr.linkedin.com   → "{company} recrute pour des postes de {title} ({location}) | LinkedIn"
+ *
+ * The regex uses alternation to handle all known locale verbs.
  *
  * Warning: LinkedIn's search bar contains geolocation text (e.g., "Saint-Maurice")
  * that must NOT be confused with the job location. Always extract location from
@@ -15,6 +18,9 @@
  */
 
 import type { SiteTemplate } from "./types.js";
+
+// Locale verb patterns: "hiring" (en), "sucht" (de), "recrute pour des postes de" (fr)
+const VERB_PATTERN = "(?:hiring|sucht|recrute pour des postes de)";
 
 export const linkedinTemplate: SiteTemplate = {
   name: "LinkedIn",
@@ -37,23 +43,24 @@ export const linkedinTemplate: SiteTemplate = {
   },
   fields: {
     title: {
-      // Extract from <title> tag: "{company} hiring {title} in {location} | LinkedIn"
-      // We grab the title portion between "hiring " and " in "
+      // Greedy .+ captures full title, backtracks to last " in " or "(" before "| LinkedIn"
+      // Handles parens in titles like "(Data Management & Datenplattformen Fokus)"
       selector: "<title>",
-      regex: "hiring\\s+(.+?)\\s+in\\s+",
+      regex: `${VERB_PATTERN}\\s+(.+)\\s+(?:in\\s+|\\()[^|]+\\|\\s*LinkedIn`,
     },
     company: {
-      // Extract company from <title>: "{company} hiring ..."
+      // Company is always before the locale verb
       selector: "<title>",
-      regex: "^(.+?)\\s+hiring\\s+",
+      regex: `^(.+?)\\s+${VERB_PATTERN}\\s+`,
     },
     location: {
-      // Extract location from <title>: "... in {location} | LinkedIn"
+      // Greedy .* consumes everything before the LAST " in " or "(" to find location
+      // en/de: "... in {location} | LinkedIn"
+      // fr:    "... ({location}) | LinkedIn"
       selector: "<title>",
-      regex: "\\s+in\\s+(.+?)\\s*\\|\\s*LinkedIn",
+      regex: "(?:.*\\bin\\s+|.*\\()(.+?)\\)?\\s*\\|\\s*LinkedIn",
     },
     description: {
-      // Try the full JD div first, fall back to og:description
       selector: 'class="show-more-less-html__markup"',
       regex: 'class="show-more-less-html__markup"[^>]*>([\\s\\S]*?)</div>',
     },
