@@ -22,6 +22,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { scrapeJob, findTemplate, listTemplates } from "./scraper.js";
 import * as api from "./api-client.js";
+import * as jobroom from "./jobroom-client.js";
 
 function errorResponse(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -58,6 +59,12 @@ const server = new McpServer(
       "| `sl_list_templates` | Show available scraping templates |",
       "| `sl_list_profiles` | List CV profiles |",
       "| `sl_copy_cv_to_job` | Copy a CV profile to a job |",
+      "| `sl_jobroom_set_auth` | Set job-room.ch auth (JWT + CSRF from browser) |",
+      "| `sl_jobroom_auth_status` | Check job-room.ch auth status |",
+      "| `sl_jobroom_list_efforts` | List work efforts from job-room.ch |",
+      "| `sl_jobroom_get_proof` | Get a proof record with all entries |",
+      "| `sl_jobroom_submit_effort` | Submit a work effort to job-room.ch |",
+      "| `sl_jobroom_sync_job` | Sync an SL job to job-room.ch as a work effort |",
       "",
       "### Typical Workflow",
       "",
@@ -66,10 +73,17 @@ const server = new McpServer(
       "3. Review with user, then `sl_create_job` to save it",
       "4. Or use `sl_scrape_and_create` for one-step creation",
       "",
+      "### job-room.ch (NPA/RAV) Workflow",
+      "",
+      "1. User logs into job-room.ch in their browser",
+      "2. `sl_jobroom_set_auth` with JWT token and CSRF cookie from DevTools",
+      "3. `sl_jobroom_list_efforts` to see existing entries",
+      "4. `sl_jobroom_sync_job` to push SL jobs as work efforts",
+      "",
       "### Supported Job Sites",
       "",
       "- **LinkedIn** (linkedin.com/jobs/view/*) — HTTP with Chrome headers",
-      "- More coming: Jobup, Glassdoor, Experteer, job-room.ch",
+      "- More coming: Jobup, Glassdoor, Experteer",
     ].join("\n"),
   },
 );
@@ -274,6 +288,170 @@ server.registerTool("sl_copy_cv_to_job", {
   try {
     const result = await api.copyProfileToJob(job_uuid, profile_uuid, name);
     return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// =====================================================================
+// job-room.ch (NPA/RAV) tools
+// =====================================================================
+
+// --- sl_jobroom_set_auth ---
+
+server.registerTool("sl_jobroom_set_auth", {
+  description:
+    "Set job-room.ch authentication credentials from your browser session. Required before using any other sl_jobroom_* tools. Get the JWT from the Authorization header and the CSRF from cookies in Chrome DevTools.",
+  inputSchema: {
+    jwt: z.string().describe("Bearer JWT token from the Authorization header (without 'Bearer ' prefix)"),
+    csrf: z.string().describe("CSRF cookie value (will be base64-encoded automatically)"),
+  },
+}, async ({ jwt, csrf }) => {
+  try {
+    jobroom.setAuth(jwt, csrf);
+    // Verify by fetching current user
+    const user = await jobroom.getCurrentUser();
+    return textResponse({
+      message: "job-room.ch auth configured successfully.",
+      user,
+    });
+  } catch (err) {
+    jobroom.clearAuth();
+    return errorResponse(err);
+  }
+});
+
+// --- sl_jobroom_auth_status ---
+
+server.registerTool("sl_jobroom_auth_status", {
+  description: "Check if job-room.ch authentication is configured.",
+  inputSchema: {},
+}, async () => {
+  return textResponse({
+    authenticated: jobroom.hasAuth(),
+    message: jobroom.hasAuth()
+      ? "job-room.ch auth is configured. Use sl_jobroom_list_efforts to see work efforts."
+      : "Not authenticated. Use sl_jobroom_set_auth with JWT and CSRF from your browser session.",
+  });
+});
+
+// --- sl_jobroom_list_efforts ---
+
+server.registerTool("sl_jobroom_list_efforts", {
+  description:
+    "List work efforts (Arbeitsbemühungen) from job-room.ch. Shows all proof records and their entries. Requires prior sl_jobroom_set_auth.",
+  inputSchema: {
+    user_id: z.string().describe("User ID from job-room.ch (get via sl_jobroom_set_auth response)"),
+    page: z.number().optional().describe("Page number (default 0)"),
+  },
+}, async ({ user_id, page }) => {
+  try {
+    const result = await jobroom.listProofs(user_id, page);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_jobroom_get_proof ---
+
+server.registerTool("sl_jobroom_get_proof", {
+  description:
+    "Get a single proof record with all its work efforts. Use sl_jobroom_list_efforts first to find the proof ID.",
+  inputSchema: {
+    proof_id: z.string().describe("UUID of the proof record"),
+  },
+}, async ({ proof_id }) => {
+  try {
+    const result = await jobroom.getProof(proof_id);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_jobroom_submit_effort ---
+
+server.registerTool("sl_jobroom_submit_effort", {
+  description:
+    "Submit a work effort to job-room.ch (NPA/RAV). Can create from scratch or from an existing SeriousLetter job. Use sl_jobroom_set_auth first.",
+  inputSchema: {
+    user_id: z.string().describe("User ID from job-room.ch"),
+    occupation: z.string().describe("Position title / job role"),
+    apply_date: z.string().describe("Application date YYYY-MM-DD"),
+    company_name: z.string().describe("Company name"),
+    company_street: z.string().optional().describe("Street address"),
+    company_postal_code: z.string().optional().describe("Postal code"),
+    company_city: z.string().optional().describe("City"),
+    company_country: z.string().optional().describe("Country code (default: CH)"),
+    contact_person: z.string().optional().describe("Contact person name"),
+    email: z.string().optional().describe("Contact email"),
+    form_url: z.string().optional().describe("Application URL"),
+    phone: z.string().optional().describe("Contact phone"),
+    apply_channel: z.enum(["ELECTRONIC", "MAIL", "PERSONAL", "PHONE"]).optional().describe("How the application was sent (default: ELECTRONIC)"),
+    apply_status: z.enum(["PENDING", "EMPLOYED", "REJECTED", "INTERVIEW"]).optional().describe("Current status (default: PENDING)"),
+    full_time: z.boolean().optional().describe("Full-time position (default: true)"),
+  },
+}, async (params) => {
+  try {
+    const data: jobroom.CreateWorkEffortData = {
+      occupation: params.occupation,
+      applyDate: params.apply_date,
+      companyName: params.company_name,
+      companyStreet: params.company_street,
+      companyPostalCode: params.company_postal_code,
+      companyCity: params.company_city,
+      companyCountry: params.company_country || "CH",
+      contactPerson: params.contact_person,
+      email: params.email,
+      formUrl: params.form_url,
+      phone: params.phone,
+      applyChannelTypes: [params.apply_channel || "ELECTRONIC"],
+      applyStatus: [params.apply_status || "PENDING"],
+      fullTimeJob: params.full_time !== false,
+    };
+    const result = await jobroom.createWorkEffort(params.user_id, data);
+    return textResponse({
+      message: `Work effort "${params.occupation}" at ${params.company_name} submitted to job-room.ch.`,
+      result,
+    });
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_jobroom_sync_job ---
+
+server.registerTool("sl_jobroom_sync_job", {
+  description:
+    "Sync a SeriousLetter job to job-room.ch as a work effort. Fetches the job from SL, maps fields, and submits to job-room.ch. Requires sl_jobroom_set_auth first.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the SeriousLetter job to sync"),
+    user_id: z.string().describe("User ID from job-room.ch"),
+    apply_date: z.string().optional().describe("Override application date (YYYY-MM-DD, defaults to job's applied_date or today)"),
+  },
+}, async ({ job_uuid, user_id, apply_date }) => {
+  try {
+    // Fetch job from SL
+    const job = await api.getJob(job_uuid) as Record<string, unknown>;
+
+    // Map to work effort
+    const data = jobroom.slJobToWorkEffort(job, apply_date);
+
+    if (!data.companyName || !data.occupation) {
+      return errorResponse(new Error(
+        `Job is missing required fields. company: "${data.companyName}", title: "${data.occupation}"`,
+      ));
+    }
+
+    // Submit to job-room.ch
+    const result = await jobroom.createWorkEffort(user_id, data);
+
+    return textResponse({
+      message: `Synced "${data.occupation}" at ${data.companyName} to job-room.ch.`,
+      mappedData: data,
+      result,
+    });
   } catch (err) {
     return errorResponse(err);
   }
