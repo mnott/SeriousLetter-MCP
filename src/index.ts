@@ -23,6 +23,7 @@ import { z } from "zod";
 import { scrapeJob, findTemplate, listTemplates } from "./scraper.js";
 import * as api from "./api-client.js";
 import * as jobroom from "./jobroom-client.js";
+import * as jobroomSearch from "./jobroom-search.js";
 
 function errorResponse(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -74,6 +75,9 @@ const server = new McpServer(
       "| `sl_list_notes` | List notes for a job |",
       "| `sl_get_preferences` | Get user job search preferences |",
       "| `sl_update_preferences` | Update user preferences |",
+      "| `sl_search_jobroom` | Search job-room.ch for jobs (keywords, canton, workload, etc.) |",
+      "| `sl_get_jobroom_job` | Get full details of a job-room.ch listing |",
+      "| `sl_import_jobroom_job` | Import a job-room.ch listing into SeriousLetter |",
       "| `sl_jobroom_check_session` | Check if Chrome has an active job-room.ch session |",
       "| `sl_jobroom_list_efforts` | List work efforts from job-room.ch |",
       "| `sl_jobroom_get_proof` | Get a proof record with all entries |",
@@ -87,10 +91,38 @@ const server = new McpServer(
       "3. Review with user, then `sl_create_job` to save it",
       "4. Or use `sl_scrape_and_create` for one-step creation",
       "",
-      "### job-room.ch (NPA/RAV) Workflow",
+      "### job-room.ch Job Search (Public API)",
       "",
-      "All job-room.ch API calls are routed through Chrome via macOS AppleScript.",
-      "The browser handles authentication automatically (httpOnly SSO cookies).",
+      "job-room.ch (arbeit.swiss) is Switzerland's official public employment service.",
+      "The search API is public and requires no authentication.",
+      "",
+      "**Search workflow:**",
+      "1. `sl_search_jobroom` — Search with keywords, filters (canton, workload, etc.)",
+      "2. `sl_get_jobroom_job` — Get full details of an interesting listing",
+      "3. `sl_import_jobroom_job` — Import into SeriousLetter for tracking",
+      "",
+      "**Smart search:** When the user says 'search for jobs' without specifying a provider,",
+      "check their preferences via `sl_get_preferences` for `location_preferences` and",
+      "`evaluation_criteria` to build relevant keyword and filter combinations.",
+      "Present results as a summary table: title, company, location, workload.",
+      "",
+      "**Available filters:**",
+      "- `keywords` — search terms (e.g. ['IT leadership', 'CTO'])",
+      "- `cantonCodes` — Swiss cantons (e.g. ['VD', 'GE', 'ZH'])",
+      "- `workloadPercentageMin/Max` — workload range (10-100)",
+      "- `permanent` — true for permanent positions only",
+      "- `onlineSince` — posted within N days",
+      "- `companyName` — filter by company",
+      "- `language` — listing language (de, fr, en, it)",
+      "- `radiusSearchRequest` — geographic radius search",
+      "",
+      "**Canton codes reference:**",
+      "AG, AI, AR, BE, BL, BS, FR, GE, GL, GR, JU, LU, NE, NW, OW, SG, SH, SO, SZ, TG, TI, UR, VD, VS, ZG, ZH",
+      "",
+      "### job-room.ch NPA/RAV Workflow (Authenticated)",
+      "",
+      "For submitting work efforts (Arbeitsbemühungen), all API calls are routed",
+      "through Chrome via macOS AppleScript. The browser handles authentication.",
       "",
       "1. User opens job-room.ch in Chrome and logs in",
       "2. `sl_jobroom_check_session` to verify the session is active",
@@ -195,6 +227,7 @@ const server = new McpServer(
       "",
       "### Supported Job Sites",
       "",
+      "- **job-room.ch** (arbeit.swiss) — Public REST API, full search + details, no auth",
       "- **LinkedIn** (linkedin.com/jobs/view/*) — HTTP with Chrome headers",
       "- More coming: Jobup, Glassdoor, Experteer",
     ].join("\n"),
@@ -731,6 +764,114 @@ server.registerTool("sl_update_preferences", {
   try {
     const result = await api.updatePreferences(params);
     return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// =====================================================================
+// job-room.ch Public Job Search tools — No auth needed
+// =====================================================================
+
+// --- sl_search_jobroom ---
+
+server.registerTool("sl_search_jobroom", {
+  description:
+    "Search for jobs on job-room.ch (arbeit.swiss), Switzerland's official public employment service. No authentication needed. Returns a list of matching jobs with title, company, location, and workload.",
+  inputSchema: {
+    keywords: z.array(z.string()).optional().describe("Search keywords (e.g. ['software engineer', 'devops'])"),
+    canton_codes: z.array(z.string()).optional().describe("Swiss canton codes to filter by (e.g. ['VD', 'GE', 'ZH'])"),
+    workload_min: z.number().optional().describe("Minimum workload percentage (10-100)"),
+    workload_max: z.number().optional().describe("Maximum workload percentage (10-100)"),
+    permanent: z.boolean().optional().describe("Only permanent positions"),
+    online_since: z.number().optional().describe("Posted within the last N days"),
+    company_name: z.string().optional().describe("Filter by company name"),
+    language: z.string().optional().describe("Listing language: de, fr, en, it"),
+    page: z.number().optional().describe("Page number (default 0)"),
+    page_size: z.number().optional().describe("Results per page (default 20, max 100)"),
+  },
+}, async (params) => {
+  try {
+    const searchParams: jobroomSearch.JobroomSearchParams = {
+      keywords: params.keywords,
+      cantonCodes: params.canton_codes,
+      workloadPercentageMin: params.workload_min,
+      workloadPercentageMax: params.workload_max,
+      permanent: params.permanent,
+      onlineSince: params.online_since,
+      companyName: params.company_name,
+      language: params.language,
+    };
+    const result = await jobroomSearch.searchJobs(
+      searchParams,
+      params.page || 0,
+      params.page_size || 20,
+    );
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_jobroom_job ---
+
+server.registerTool("sl_get_jobroom_job", {
+  description:
+    "Get full details of a job listing from job-room.ch by its UUID. Returns title, full description, company info, location, requirements, and application channels.",
+  inputSchema: {
+    job_id: z.string().describe("UUID of the job-room.ch listing (from sl_search_jobroom results)"),
+  },
+}, async ({ job_id }) => {
+  try {
+    const result = await jobroomSearch.getJob(job_id);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_import_jobroom_job ---
+
+server.registerTool("sl_import_jobroom_job", {
+  description:
+    "Import a job from job-room.ch into SeriousLetter. Fetches the full listing, maps it to SL fields, checks for duplicates, and creates the job. Use sl_search_jobroom first to find the job ID.",
+  inputSchema: {
+    job_id: z.string().describe("UUID of the job-room.ch listing to import"),
+    priority: z.number().optional().describe("Priority 1-5 (1=highest)"),
+    status: z.string().optional().describe("Initial status (default: opportunity)"),
+  },
+}, async ({ job_id, priority, status }) => {
+  try {
+    // Step 1: Fetch full details from job-room.ch
+    const jobroomJob = await jobroomSearch.getJob(job_id);
+
+    // Step 2: Check for duplicates in SeriousLetter
+    const existing = await api.searchJobs(jobroomJob.company.name);
+    const jobs = (existing as { jobs?: Array<{ position_title: string }> })?.jobs || [];
+    const duplicate = jobs.find(
+      (j) => j.position_title?.toLowerCase() === jobroomJob.title.toLowerCase(),
+    );
+    if (duplicate) {
+      return textResponse({
+        warning: "Possible duplicate found in SeriousLetter",
+        jobroomJob: { id: jobroomJob.id, title: jobroomJob.title, company: jobroomJob.company.name },
+        existingJob: duplicate,
+        action: "Job NOT created. Use sl_create_job manually if this is a different position.",
+      });
+    }
+
+    // Step 3: Map and create
+    const mapped = jobroomSearch.mapToSeriousLetter(jobroomJob);
+    if (priority) mapped.priority = priority;
+    if (status) mapped.status = status;
+
+    const created = await api.createJob(mapped as unknown as api.CreateJobData);
+
+    return textResponse({
+      message: `Imported "${jobroomJob.title}" at ${jobroomJob.company.name} from job-room.ch.`,
+      jobroomId: jobroomJob.id,
+      created,
+    });
   } catch (err) {
     return errorResponse(err);
   }
