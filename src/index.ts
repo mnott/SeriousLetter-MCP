@@ -77,6 +77,8 @@ const server = new McpServer(
       "| `sl_list_conversations` | List saved conversations for a job |",
       "| `sl_save_conversation` | Save an analysis/evaluation as a conversation on a job |",
       "| `sl_get_conversation` | Get a saved conversation by ID |",
+      "| `sl_list_prompts` | List available AI pipelines/prompts (metadata only) |",
+      "| `sl_get_prompt` | Get pipeline detail: stages, variables, execution info |",
       "| `sl_get_preferences` | Get user job search preferences |",
       "| `sl_update_preferences` | Update user preferences |",
       "| `sl_search_jobroom` | Search job-room.ch for jobs (keywords, canton, workload, etc.) |",
@@ -803,6 +805,40 @@ server.registerTool("sl_get_conversation", {
 }, async ({ conversation_id }) => {
   try {
     const result = await api.getConversation(conversation_id);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_list_prompts ---
+
+server.registerTool("sl_list_prompts", {
+  description:
+    "List available AI pipelines/prompts (metadata only, no raw templates). Shows pipeline name, description, section (cover_letter, cv, chat, growth), stage count, and whether it's a quick action. Optional section filter.",
+  inputSchema: {
+    section: z.string().optional().describe("Filter by section: cover_letter, cv, chat, growth, other"),
+  },
+}, async ({ section }) => {
+  try {
+    const result = await api.listPrompts(section);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_prompt ---
+
+server.registerTool("sl_get_prompt", {
+  description:
+    "Get detailed pipeline/prompt metadata including stages, execution order, and context variables. Does NOT expose raw template content — only metadata and variable names needed for execution.",
+  inputSchema: {
+    pipeline_id: z.string().describe("Pipeline ID (e.g., 'pl_330a72b6')"),
+  },
+}, async ({ pipeline_id }) => {
+  try {
+    const result = await api.getPrompt(pipeline_id);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);

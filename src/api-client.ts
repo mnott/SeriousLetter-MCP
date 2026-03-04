@@ -261,6 +261,17 @@ export async function deleteConversation(conversationId: number): Promise<unknow
   return apiRequest("DELETE", `/api/v1/conversations/${conversationId}`);
 }
 
+// --- Prompts/Pipelines ---
+
+export async function listPrompts(section?: string): Promise<unknown> {
+  const query = section ? `?section=${section}` : "";
+  return apiRequest("GET", `/api/v1/prompts${query}`);
+}
+
+export async function getPrompt(pipelineId: string): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/prompts/${pipelineId}`);
+}
+
 // --- Export ---
 
 export async function exportLetterPdf(letterId: number, template?: string): Promise<Response> {
