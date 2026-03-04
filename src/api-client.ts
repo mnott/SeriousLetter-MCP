@@ -272,6 +272,32 @@ export async function getPrompt(pipelineId: string): Promise<unknown> {
   return apiRequest("GET", `/api/v1/prompts/${pipelineId}`);
 }
 
+// --- Pipeline Execution ---
+
+export async function runPipeline(
+  jobUuid: string,
+  pipelineId: string,
+  options?: {
+    cv_uuid?: string;
+    message?: string;
+    save_conversation?: boolean;
+    conversation_name?: string;
+  },
+): Promise<unknown> {
+  const body: Record<string, unknown> = {};
+  if (options?.cv_uuid) body.cv_uuid = options.cv_uuid;
+  if (options?.message) body.message = options.message;
+  if (options?.save_conversation !== undefined)
+    body.save_conversation = options.save_conversation;
+  if (options?.conversation_name)
+    body.conversation_name = options.conversation_name;
+  return apiRequest(
+    "POST",
+    `/api/v1/jobs/${jobUuid}/run/${pipelineId}`,
+    body,
+  );
+}
+
 // --- Export ---
 
 export async function exportLetterPdf(letterId: number, template?: string): Promise<Response> {

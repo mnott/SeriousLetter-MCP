@@ -79,6 +79,7 @@ const server = new McpServer(
       "| `sl_get_conversation` | Get a saved conversation by ID |",
       "| `sl_list_prompts` | List available AI pipelines/prompts (metadata only) |",
       "| `sl_get_prompt` | Get pipeline detail: stages, variables, execution info |",
+      "| `sl_run_prompt` | Run an AI pipeline server-side on a job (gap analysis, skill analysis, etc.) |",
       "| `sl_get_preferences` | Get user job search preferences |",
       "| `sl_update_preferences` | Update user preferences |",
       "| `sl_search_jobroom` | Search job-room.ch for jobs (keywords, canton, workload, etc.) |",
@@ -839,6 +840,36 @@ server.registerTool("sl_get_prompt", {
 }, async ({ pipeline_id }) => {
   try {
     const result = await api.getPrompt(pipeline_id);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_run_prompt ---
+
+server.registerTool("sl_run_prompt", {
+  description:
+    "Run an AI pipeline server-side on a job. Use sl_list_prompts to discover available pipelines first. " +
+    "Returns the pipeline output (e.g., gap analysis, skill analysis, cover letter). " +
+    "Optionally saves the result as a conversation on the job. " +
+    "This executes prompt templates on the server — templates never leave the server.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job to run the pipeline on"),
+    pipeline_id: z.string().describe("Pipeline ID (e.g., 'pl_92500161' for Gap Analysis)"),
+    cv_uuid: z.string().optional().describe("UUID of CV to use (defaults to best match for job)"),
+    message: z.string().optional().describe("Optional user message/instruction for the pipeline"),
+    save_conversation: z.boolean().optional().describe("If true, save the result as a conversation on the job"),
+    conversation_name: z.string().optional().describe("Name for saved conversation"),
+  },
+}, async ({ job_uuid, pipeline_id, cv_uuid, message, save_conversation, conversation_name }) => {
+  try {
+    const result = await api.runPipeline(job_uuid, pipeline_id, {
+      cv_uuid,
+      message,
+      save_conversation,
+      conversation_name,
+    });
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);
