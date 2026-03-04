@@ -74,6 +74,9 @@ const server = new McpServer(
       "| `sl_export_cv_pdf` | Export a CV/profile as PDF |",
       "| `sl_add_note` | Add a note to a job |",
       "| `sl_list_notes` | List notes for a job |",
+      "| `sl_list_conversations` | List saved conversations for a job |",
+      "| `sl_save_conversation` | Save an analysis/evaluation as a conversation on a job |",
+      "| `sl_get_conversation` | Get a saved conversation by ID |",
       "| `sl_get_preferences` | Get user job search preferences |",
       "| `sl_update_preferences` | Update user preferences |",
       "| `sl_search_jobroom` | Search job-room.ch for jobs (keywords, canton, workload, etc.) |",
@@ -736,6 +739,67 @@ server.registerTool("sl_list_notes", {
 }, async ({ job_uuid }) => {
   try {
     const result = await api.listJobNotes(job_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// =====================================================================
+// Conversations — Saved chat contexts per job
+// =====================================================================
+
+// --- sl_list_conversations ---
+
+server.registerTool("sl_list_conversations", {
+  description:
+    "List saved conversations for a job. Returns conversation name, message count, and timestamps. Use this to see what analyses, evaluations, or discussions have been saved for a job.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+  },
+}, async ({ job_uuid }) => {
+  try {
+    const result = await api.listConversations(job_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_save_conversation ---
+
+server.registerTool("sl_save_conversation", {
+  description:
+    "Save a conversation to a job. Use this to persist evaluations, gap analyses, skill analyses, or any structured analysis as a conversation on the job. Messages should alternate between user and assistant roles.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    messages: z.array(z.object({
+      role: z.enum(["user", "assistant"]).describe("Message role"),
+      content: z.string().describe("Message content"),
+    })).describe("Array of conversation messages"),
+    name: z.string().optional().describe("Conversation label (auto-generated from first message if omitted)"),
+    cv_uuid: z.string().optional().describe("UUID of the CV profile used in this conversation"),
+  },
+}, async ({ job_uuid, messages, name, cv_uuid }) => {
+  try {
+    const result = await api.createConversation(job_uuid, messages, name, cv_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_conversation ---
+
+server.registerTool("sl_get_conversation", {
+  description:
+    "Get a saved conversation by ID with all messages. Use sl_list_conversations to find conversation IDs first.",
+  inputSchema: {
+    conversation_id: z.number().describe("ID of the saved conversation"),
+  },
+}, async ({ conversation_id }) => {
+  try {
+    const result = await api.getConversation(conversation_id);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);

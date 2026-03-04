@@ -228,6 +228,39 @@ export async function addJobNote(
   return apiRequest("POST", `/api/v1/jobs/${jobUuid}/notes`, body);
 }
 
+// --- Conversations ---
+
+export async function listConversations(jobUuid: string): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/jobs/${jobUuid}/conversations`);
+}
+
+export async function createConversation(
+  jobUuid: string,
+  messages: Array<{ role: string; content: string }>,
+  name?: string,
+  cvUuid?: string,
+): Promise<unknown> {
+  const body: Record<string, unknown> = { messages };
+  if (name) body.name = name;
+  if (cvUuid) body.cv_uuid = cvUuid;
+  return apiRequest("POST", `/api/v1/jobs/${jobUuid}/conversations`, body);
+}
+
+export async function getConversation(conversationId: number): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/conversations/${conversationId}`);
+}
+
+export async function updateConversation(
+  conversationId: number,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return apiRequest("PUT", `/api/v1/conversations/${conversationId}`, data);
+}
+
+export async function deleteConversation(conversationId: number): Promise<unknown> {
+  return apiRequest("DELETE", `/api/v1/conversations/${conversationId}`);
+}
+
 // --- Export ---
 
 export async function exportLetterPdf(letterId: number, template?: string): Promise<Response> {
