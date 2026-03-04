@@ -614,9 +614,12 @@ server.registerTool("sl_update_letter", {
     content: z.string().optional().describe("Updated letter content"),
     version_name: z.string().optional().describe("Updated version name"),
   },
-}, async ({ letter_id, ...data }) => {
+}, async ({ letter_id, content, version_name }) => {
   try {
-    const result = await api.updateLetter(letter_id, data);
+    const payload: Record<string, unknown> = {};
+    if (content !== undefined) payload.final_content = content;
+    if (version_name !== undefined) payload.version_name = version_name;
+    const result = await api.updateLetter(letter_id, payload);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);
