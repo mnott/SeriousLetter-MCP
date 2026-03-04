@@ -578,7 +578,7 @@ server.registerTool("sl_create_letter", {
     job_uuid: z.string().describe("UUID of the job"),
     content: z.string().describe("The cover letter content (markdown)"),
     version_name: z.string().optional().describe("Version name (e.g. 'MCP Draft 1')"),
-    tone: z.string().optional().describe("Tone used: professional, friendly, confident"),
+    tone: z.enum(["very_formal", "formal", "balanced", "friendly", "casual"]).optional().describe("Letter tone (default: balanced)"),
     language: z.string().optional().describe("Language code (en, de, fr)"),
   },
 }, async ({ job_uuid, ...data }) => {
@@ -636,7 +636,7 @@ server.registerTool("sl_generate_letter", {
     "Generate a cover letter using SeriousLetter's server-side 3-stage pipeline (draft → review → consensus). This uses the app's configured prompts. Returns the generated letter.",
   inputSchema: {
     job_uuid: z.string().describe("UUID of the job"),
-    tone: z.string().optional().describe("Tone: professional (default), friendly, confident"),
+    tone: z.enum(["very_formal", "formal", "balanced", "friendly", "casual"]).optional().describe("Letter tone (default: balanced)"),
     language: z.string().optional().describe("Language code (en, de, fr)"),
     profile_uuid: z.string().optional().describe("UUID of CV profile to use (uses default if not set)"),
   },
