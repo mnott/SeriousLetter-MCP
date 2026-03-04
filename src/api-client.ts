@@ -223,8 +223,8 @@ export async function addJobNote(
   content: string,
   noteType?: string,
 ): Promise<unknown> {
-  const body: Record<string, unknown> = { content };
-  if (noteType) body.note_type = noteType;
+  const body: Record<string, unknown> = { text: content };
+  if (noteType) body.category = noteType;
   return apiRequest("POST", `/api/v1/jobs/${jobUuid}/notes`, body);
 }
 
