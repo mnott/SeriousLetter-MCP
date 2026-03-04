@@ -147,6 +147,35 @@ export async function listLetters(jobUuid: string): Promise<unknown> {
   return apiRequest("GET", `/api/v1/jobs/${jobUuid}/letters`);
 }
 
+export interface CreateLetterData {
+  content: string;
+  version_name?: string;
+  tone?: string;
+  language?: string;
+}
+
+export async function createLetter(jobUuid: string, data: CreateLetterData): Promise<unknown> {
+  return apiRequest("POST", `/api/v1/jobs/${jobUuid}/letters`, data as unknown as Record<string, unknown>);
+}
+
+export async function getLetter(letterId: number): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/letters/${letterId}`);
+}
+
+export async function updateLetter(
+  letterId: number,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return apiRequest("PUT", `/api/v1/letters/${letterId}`, data);
+}
+
+export async function generateLetter(
+  jobUuid: string,
+  options?: { tone?: string; language?: string; profile_uuid?: string },
+): Promise<unknown> {
+  return apiRequest("POST", `/api/v1/jobs/${jobUuid}/letters/generate`, (options || {}) as Record<string, unknown>);
+}
+
 // --- CVs ---
 
 export async function listProfiles(): Promise<unknown> {
