@@ -59,6 +59,15 @@ const server = new McpServer(
       "| `sl_list_templates` | Show available scraping templates |",
       "| `sl_list_profiles` | List CV profiles |",
       "| `sl_copy_cv_to_job` | Copy a CV profile to a job |",
+      "| `sl_update_job` | Update an existing job |",
+      "| `sl_get_job` | Get full details of a specific job |",
+      "| `sl_list_companies` | List/search companies |",
+      "| `sl_create_company` | Create a new company |",
+      "| `sl_list_letters` | List cover letters for a job |",
+      "| `sl_add_note` | Add a note to a job |",
+      "| `sl_list_notes` | List notes for a job |",
+      "| `sl_get_preferences` | Get user job search preferences |",
+      "| `sl_update_preferences` | Update user preferences |",
       "| `sl_jobroom_check_session` | Check if Chrome has an active job-room.ch session |",
       "| `sl_jobroom_list_efforts` | List work efforts from job-room.ch |",
       "| `sl_jobroom_get_proof` | Get a proof record with all entries |",
@@ -81,6 +90,59 @@ const server = new McpServer(
       "2. `sl_jobroom_check_session` to verify the session is active",
       "3. `sl_jobroom_list_efforts` to see existing entries",
       "4. `sl_jobroom_sync_job` to push SL jobs as work efforts",
+      "",
+      "### Job Evaluation Framework",
+      "",
+      "When evaluating a job, score it 1-5 on each criterion from the user's preferences",
+      "(retrieved via `sl_get_preferences`). The evaluation_criteria field contains the user's",
+      "personal scoring priorities (must-haves, nice-to-haves, deal-breakers).",
+      "",
+      "Output format for evaluation notes:",
+      "```",
+      "## Evaluation: [Position] at [Company]",
+      "Overall Fit: X/5",
+      "",
+      "| Criterion | Score | Notes |",
+      "|-----------|-------|-------|",
+      "| [criterion] | X/5 | [reasoning] |",
+      "",
+      "### Summary",
+      "[2-3 sentence assessment]",
+      "```",
+      "",
+      "### Job Status Mapping",
+      "",
+      "| Status | When to use |",
+      "|--------|-------------|",
+      "| `opportunity` | New job, not yet reviewed |",
+      "| `editing` | Preparing application materials |",
+      "| `applied` | Application submitted |",
+      "| `rejected` | Received rejection |",
+      "| `not_applying` | Decided not to apply |",
+      "| `outdated` | Job listing expired or filled |",
+      "",
+      "### Note Conventions",
+      "",
+      "When adding notes to jobs via `sl_add_note`, use these types:",
+      "- `general` (default) — freeform notes",
+      "- `evaluation` — job fit analysis using the evaluation framework",
+      "- `status_change` — reason for status updates",
+      "- `research` — company/role research findings",
+      "",
+      "### Cover Letter Generation",
+      "",
+      "When generating cover letters, check `sl_get_preferences` for the user's cover_letter_notes",
+      "which contain style instructions (tone, emphasis areas, length preferences).",
+      "Also check default_letter_template for the preferred template.",
+      "",
+      "### Batch Workflow",
+      "",
+      "For processing multiple jobs at once:",
+      "1. Scrape all URLs first with `sl_scrape_job`",
+      "2. Check for duplicates with `sl_search_jobs` for each",
+      "3. Create non-duplicates with `sl_create_job`",
+      "4. Evaluate each with the evaluation framework",
+      "5. Add evaluation notes with `sl_add_note`",
       "",
       "### Supported Job Sites",
       "",
@@ -289,6 +351,193 @@ server.registerTool("sl_copy_cv_to_job", {
 }, async ({ job_uuid, profile_uuid, name }) => {
   try {
     const result = await api.copyProfileToJob(job_uuid, profile_uuid, name);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_update_job ---
+
+server.registerTool("sl_update_job", {
+  description:
+    "Update an existing job in SeriousLetter. Use sl_list_jobs or sl_search_jobs to find the job UUID first.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job to update"),
+    status: z.string().optional().describe("New status: opportunity, editing, applied, rejected, not_applying, outdated"),
+    position_title: z.string().optional().describe("Updated position title"),
+    location: z.string().optional().describe("Updated location"),
+    salary_range: z.string().optional().describe("Updated salary range"),
+    priority: z.number().optional().describe("Priority 1-5 (1=highest)"),
+    language: z.string().optional().describe("Job language code"),
+    job_description: z.string().optional().describe("Updated job description"),
+    source_url: z.string().optional().describe("Source URL"),
+    application_url: z.string().optional().describe("Application URL"),
+    contact_person: z.string().optional().describe("Contact person"),
+  },
+}, async ({ job_uuid, ...data }) => {
+  try {
+    const result = await api.updateJob(job_uuid, data);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_job ---
+
+server.registerTool("sl_get_job", {
+  description:
+    "Get full details of a specific job including description, status, company info, and all metadata.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+  },
+}, async ({ job_uuid }) => {
+  try {
+    const result = await api.getJob(job_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_list_companies ---
+
+server.registerTool("sl_list_companies", {
+  description:
+    "List or search companies in SeriousLetter. Useful for finding existing company records before creating jobs.",
+  inputSchema: {
+    q: z.string().optional().describe("Search query (company name)"),
+    page: z.number().optional().describe("Page number"),
+  },
+}, async ({ q, page }) => {
+  try {
+    const result = await api.searchCompanies(q, page);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_create_company ---
+
+server.registerTool("sl_create_company", {
+  description:
+    "Create a new company record in SeriousLetter. Returns the company with its UUID, which can be used when creating jobs.",
+  inputSchema: {
+    name: z.string().describe("Company name"),
+    website: z.string().optional().describe("Company website URL"),
+    address_line1: z.string().optional().describe("Street address"),
+    city: z.string().optional().describe("City"),
+    postal_code: z.string().optional().describe("Postal code"),
+    country_code: z.string().optional().describe("Country code (e.g. CH, DE)"),
+    country: z.string().optional().describe("Country name"),
+    contact_person: z.string().optional().describe("Contact person"),
+    contact_email: z.string().optional().describe("Contact email"),
+    notes: z.string().optional().describe("Notes about the company"),
+    is_recruiting_agency: z.boolean().optional().describe("True if this is a recruiting agency"),
+  },
+}, async (params) => {
+  try {
+    const result = await api.createCompany(params);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_list_letters ---
+
+server.registerTool("sl_list_letters", {
+  description:
+    "List cover letters for a specific job. Returns letter content, template, and metadata.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+  },
+}, async ({ job_uuid }) => {
+  try {
+    const result = await api.listLetters(job_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_add_note ---
+
+server.registerTool("sl_add_note", {
+  description:
+    "Add a note to a job. Use for evaluations, status change reasons, research findings, or general notes.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    content: z.string().describe("Note content (markdown supported)"),
+    note_type: z.string().optional().describe("Type: general (default), evaluation, status_change, research"),
+  },
+}, async ({ job_uuid, content, note_type }) => {
+  try {
+    const result = await api.addJobNote(job_uuid, content, note_type);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_list_notes ---
+
+server.registerTool("sl_list_notes", {
+  description:
+    "List notes for a specific job. Returns all notes with content, type, and timestamps.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+  },
+}, async ({ job_uuid }) => {
+  try {
+    const result = await api.listJobNotes(job_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_preferences ---
+
+server.registerTool("sl_get_preferences", {
+  description:
+    "Get user job search preferences including salary expectations, availability, work arrangement, evaluation criteria, and cover letter style notes.",
+  inputSchema: {},
+}, async () => {
+  try {
+    const result = await api.getPreferences();
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_update_preferences ---
+
+server.registerTool("sl_update_preferences", {
+  description:
+    "Update user job search preferences. Only include fields you want to change.",
+  inputSchema: {
+    salary_min: z.number().optional().describe("Minimum salary"),
+    salary_max: z.number().optional().describe("Maximum salary"),
+    salary_currency: z.string().optional().describe("Currency: CHF, EUR, USD, GBP"),
+    availability: z.string().optional().describe("immediately, 1_month, 2_months, 3_months, by_agreement"),
+    availability_date: z.string().optional().describe("Available from date (YYYY-MM-DD)"),
+    notice_period: z.string().optional().describe("none, 1_month, 2_months, 3_months"),
+    work_arrangement: z.string().optional().describe("any, remote, hybrid, onsite"),
+    willingness_to_travel: z.string().optional().describe("no, occasionally, frequently, yes"),
+    work_permit: z.string().optional().describe("Work permit details"),
+    driving_license: z.string().optional().describe("Driving license category"),
+    location_preferences: z.string().optional().describe("Where you want to work"),
+    evaluation_criteria: z.string().optional().describe("Job evaluation criteria for AI scoring"),
+    cover_letter_notes: z.string().optional().describe("Style instructions for cover letter generation"),
+    default_letter_template: z.string().optional().describe("Default letter template ID"),
+  },
+}, async (params) => {
+  try {
+    const result = await api.updatePreferences(params);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);

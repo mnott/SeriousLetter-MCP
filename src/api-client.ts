@@ -167,6 +167,34 @@ export async function copyProfileToJob(
   return apiRequest("POST", `/api/v1/jobs/${jobUuid}/cvs/copy/${profileUuid}`, body);
 }
 
+// --- Preferences ---
+
+export async function getPreferences(): Promise<unknown> {
+  return apiRequest("GET", "/api/v1/preferences");
+}
+
+export async function updatePreferences(
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return apiRequest("PATCH", "/api/v1/preferences", data);
+}
+
+// --- Job Notes ---
+
+export async function listJobNotes(jobUuid: string): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/jobs/${jobUuid}/notes`);
+}
+
+export async function addJobNote(
+  jobUuid: string,
+  content: string,
+  noteType?: string,
+): Promise<unknown> {
+  const body: Record<string, unknown> = { content };
+  if (noteType) body.note_type = noteType;
+  return apiRequest("POST", `/api/v1/jobs/${jobUuid}/notes`, body);
+}
+
 // --- Export ---
 
 export async function exportLetterPdf(letterId: number, template?: string): Promise<Response> {
