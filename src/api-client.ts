@@ -182,6 +182,10 @@ export async function listProfiles(): Promise<unknown> {
   return apiRequest("GET", "/api/v1/profiles");
 }
 
+export async function getProfile(profileUuid: string): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/profiles/${profileUuid}`);
+}
+
 export async function listJobCvs(jobUuid: string): Promise<unknown> {
   return apiRequest("GET", `/api/v1/jobs/${jobUuid}/cvs`);
 }

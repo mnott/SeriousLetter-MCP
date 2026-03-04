@@ -59,6 +59,7 @@ const server = new McpServer(
       "| `sl_discover_api` | Show the full SeriousLetter API schema |",
       "| `sl_list_templates` | Show available scraping templates |",
       "| `sl_list_profiles` | List CV profiles |",
+      "| `sl_get_profile` | Get full CV content (experiences, skills, education, etc.) |",
       "| `sl_copy_cv_to_job` | Copy a CV profile to a job |",
       "| `sl_update_job` | Update an existing job |",
       "| `sl_get_job` | Get full details of a specific job |",
@@ -414,6 +415,23 @@ server.registerTool("sl_list_profiles", {
 }, async () => {
   try {
     const result = await api.listProfiles();
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_profile ---
+
+server.registerTool("sl_get_profile", {
+  description:
+    "Get full CV/profile content including personal info, experiences, education, skills, languages, certifications, and more. Use sl_list_profiles to find the profile UUID first.",
+  inputSchema: {
+    profile_uuid: z.string().describe("UUID of the CV profile to retrieve"),
+  },
+}, async ({ profile_uuid }) => {
+  try {
+    const result = await api.getProfile(profile_uuid);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);
