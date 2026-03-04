@@ -1,103 +1,179 @@
 /**
- * job-room.ch (ORP/NPA) API client.
+ * job-room.ch (ORP/NPA) API client — Browser Proxy.
  *
- * Wraps the reverse-engineered job-room.ch internal API for submitting
- * work efforts (Arbeitsbemühungen / NPA) to the RAV system.
+ * Routes all API calls through Chrome via macOS AppleScript/JXA.
+ * job-room.ch uses httpOnly session cookies from idp.arbeit.swiss SSO
+ * that cannot be extracted or replicated via external HTTP calls.
+ * The browser handles all authentication automatically.
  *
- * Authentication requires a JWT token and CSRF value from an active
- * browser session. These are set at runtime via setAuth().
+ * Requirements:
+ *   - macOS (uses osascript)
+ *   - Google Chrome with an active job-room.ch tab (user must be logged in)
  *
  * API base: https://www.job-room.ch/onlineform-service/api/npa
  */
 
-const BASE = "https://www.job-room.ch/onlineform-service/api/npa";
+import { exec } from "child_process";
+import { writeFile, unlink } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+
+const NPA_BASE = "https://www.job-room.ch/onlineform-service/api/npa";
 const USER_BASE = "https://www.job-room.ch/user-service/api";
 
-// In-memory auth state (set per session via MCP tool)
-let authToken = "";
-let csrfValue = "";
+// Cached user ID from session check
+let cachedUserId = "";
 
-/** Set authentication credentials from browser session */
-export function setAuth(jwt: string, csrf: string): void {
-  authToken = jwt;
-  csrfValue = csrf;
-}
+/**
+ * Execute JavaScript in the Chrome tab that has job-room.ch open.
+ * Finds the tab automatically across all Chrome windows.
+ */
+async function chromeExec(browserJs: string): Promise<string> {
+  const id = `jr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const jsFile = join(tmpdir(), `${id}.js`);
+  const jxaFile = join(tmpdir(), `${id}-jxa.js`);
 
-/** Check if auth is configured */
-export function hasAuth(): boolean {
-  return !!(authToken && csrfValue);
-}
+  await writeFile(jsFile, browserJs);
 
-/** Clear auth state */
-export function clearAuth(): void {
-  authToken = "";
-  csrfValue = "";
-}
+  const jxa = [
+    "ObjC.import('Foundation');",
+    "const app = Application('Google Chrome');",
+    `const nsData = $.NSString.stringWithContentsOfFileEncodingError(${JSON.stringify(jsFile)}, $.NSUTF8StringEncoding, null);`,
+    "const jsCode = ObjC.unwrap(nsData);",
+    "",
+    "function run() {",
+    "  const wins = app.windows();",
+    "  for (let i = 0; i < wins.length; i++) {",
+    "    const tabs = wins[i].tabs();",
+    "    for (let j = 0; j < tabs.length; j++) {",
+    "      if (tabs[j].url().includes('job-room.ch')) {",
+    "        return tabs[j].execute({javascript: jsCode});",
+    "      }",
+    "    }",
+    "  }",
+    "  return JSON.stringify({error: 'NO_TAB', message: 'No job-room.ch tab found in Chrome. Please open job-room.ch and log in.'});",
+    "}",
+    "run();",
+  ].join("\n");
 
-function ensureAuth(): void {
-  if (!authToken || !csrfValue) {
-    throw new Error(
-      "job-room.ch auth not set. Use sl_jobroom_set_auth with JWT token and CSRF value from your browser session.",
-    );
+  await writeFile(jxaFile, jxa);
+
+  try {
+    const output = await new Promise<string>((resolve, reject) => {
+      exec(`osascript -l JavaScript ${JSON.stringify(jxaFile)}`, {
+        encoding: "utf-8",
+        timeout: 30000,
+      }, (error, stdout, stderr) => {
+        if (error) {
+          // Chrome not running or permission denied
+          if (stderr?.includes("not running")) {
+            reject(new Error("Google Chrome is not running. Please open Chrome and navigate to job-room.ch."));
+          } else {
+            reject(new Error(`osascript failed: ${stderr || error.message}`));
+          }
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+    });
+    return output;
+  } finally {
+    await Promise.allSettled([unlink(jsFile), unlink(jxaFile)]);
   }
 }
 
-function csrfParam(): string {
-  // CSRF value must be base64-encoded as _ng query param
-  const encoded = Buffer.from(csrfValue).toString("base64");
-  return `_ng=${encoded}`;
-}
-
-function authHeaders(): Record<string, string> {
-  return {
-    Authorization: `Bearer ${authToken}`,
-    "X-Requested-With": "XMLHttpRequest",
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-}
-
+/**
+ * Make a job-room.ch API request via Chrome browser proxy.
+ * The browser's session cookies and JWT handle authentication.
+ */
 async function jobroomRequest(
   method: string,
-  url: string,
+  path: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {
-  ensureAuth();
+  // Build browser JS. Use JSON.stringify for safe embedding of values.
+  // For the body, double-stringify produces a JS string literal.
+  const bodyLiteral = body != null
+    ? JSON.stringify(JSON.stringify(body))
+    : "null";
 
-  const separator = url.includes("?") ? "&" : "?";
-  const fullUrl = `${url}${separator}${csrfParam()}`;
+  const browserJs = `(function() {
+  var token = sessionStorage.getItem('authenticationToken');
+  if (!token) return JSON.stringify({error: 'NO_AUTH', message: 'Not logged in to job-room.ch. Please log in and try again.'});
 
-  const response = await fetch(fullUrl, {
-    method,
-    headers: authHeaders(),
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  var lang = (document.cookie.match(/NG_TRANSLATE_LANG_KEY=([^;]+)/) || [])[1] || 'de';
+  var ng = btoa(lang);
+  var method = ${JSON.stringify(method)};
+  var path = ${JSON.stringify(path)};
+  var body = ${bodyLiteral};
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  var url = path + sep + '_ng=' + ng;
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`job-room.ch ${method} ${url}: HTTP ${response.status} — ${text}`);
+  var req = new XMLHttpRequest();
+  req.open(method, url, false);
+  req.setRequestHeader('Authorization', token);
+  req.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+  req.setRequestHeader('Accept', 'application/json');
+  if (method !== 'GET' && method !== 'DELETE') {
+    req.setRequestHeader('Content-Type', 'application/json');
   }
+  req.withCredentials = true;
 
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return response.json();
+  try {
+    req.send(body);
+    if (req.status >= 200 && req.status < 300) {
+      return req.responseText || JSON.stringify({ok: true});
+    }
+    return JSON.stringify({error: 'HTTP_' + req.status, status: req.status, detail: req.responseText.substring(0, 1000)});
+  } catch(e) {
+    return JSON.stringify({error: 'NETWORK', message: e.message});
   }
-  return response.text();
+})()`;
+
+  const result = await chromeExec(browserJs);
+
+  try {
+    const parsed = JSON.parse(result);
+    if (parsed?.error) {
+      throw new Error(`job-room.ch: ${parsed.error} — ${parsed.message || parsed.detail || ""}`);
+    }
+    return parsed;
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      return result; // Not JSON, return raw text
+    }
+    throw e;
+  }
 }
 
-// --- User info ---
+// --- Session check ---
 
-/** Get current user info (userId, etc.) */
-export async function getCurrentUser(): Promise<unknown> {
-  ensureAuth();
-  const url = `${USER_BASE}/current-user?${csrfParam()}`;
-  const response = await fetch(url, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error(`job-room.ch current-user: HTTP ${response.status}`);
+/** Check if Chrome has an active job-room.ch session. Returns user info. */
+export async function checkSession(): Promise<{
+  ok: boolean;
+  userId?: string;
+  user?: unknown;
+  error?: string;
+}> {
+  try {
+    const user = await jobroomRequest("GET", `${USER_BASE}/current-user`) as Record<string, unknown>;
+    cachedUserId = user.id as string;
+    return { ok: true, userId: cachedUserId, user };
+  } catch (err) {
+    cachedUserId = "";
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
   }
-  return response.json();
+}
+
+/** Get cached or fresh user ID */
+export async function getUserId(): Promise<string> {
+  if (cachedUserId) return cachedUserId;
+  const session = await checkSession();
+  if (!session.ok || !session.userId) {
+    throw new Error(session.error || "Not logged in to job-room.ch");
+  }
+  return session.userId;
 }
 
 // --- Proof of Work Efforts ---
@@ -105,7 +181,7 @@ export async function getCurrentUser(): Promise<unknown> {
 export interface ProofRecord {
   id: string;
   status: string;
-  controlPeriod?: { year: number; month: number };
+  controlPeriod?: { type: string; value: string };
   workEfforts?: WorkEffort[];
 }
 
@@ -133,16 +209,17 @@ export interface WorkEffort {
 }
 
 /** List user's proof records (monthly containers) */
-export async function listProofs(userId: string, page = 0): Promise<unknown> {
+export async function listProofs(userId?: string, page = 0): Promise<unknown> {
+  const uid = userId || await getUserId();
   return jobroomRequest(
     "GET",
-    `${BASE}/_search/by-owner-user-id?userId=${userId}&page=${page}`,
+    `${NPA_BASE}/_search/by-owner-user-id?userId=${uid}&page=${page}`,
   );
 }
 
 /** Get a single proof record with its work efforts */
 export async function getProof(proofId: string): Promise<unknown> {
-  return jobroomRequest("GET", `${BASE}/${proofId}`);
+  return jobroomRequest("GET", `${NPA_BASE}/${proofId}`);
 }
 
 // --- Work Effort CRUD ---
@@ -197,26 +274,28 @@ function buildWorkEffortPayload(data: CreateWorkEffortData): Record<string, unkn
 
 /** Create a new work effort in a proof record */
 export async function createWorkEffort(
-  userId: string,
   data: CreateWorkEffortData,
+  userId?: string,
 ): Promise<unknown> {
+  const uid = userId || await getUserId();
   const payload = buildWorkEffortPayload(data);
   return jobroomRequest(
     "POST",
-    `${BASE}/_action/add-work-effort?userId=${userId}`,
+    `${NPA_BASE}/_action/add-work-effort?userId=${uid}`,
     payload,
   );
 }
 
 /** Update an existing work effort */
 export async function updateWorkEffort(
-  userId: string,
   data: CreateWorkEffortData & { id: string },
+  userId?: string,
 ): Promise<unknown> {
+  const uid = userId || await getUserId();
   const payload = { ...buildWorkEffortPayload(data), id: data.id };
   return jobroomRequest(
     "POST",
-    `${BASE}/_action/update-work-effort?userId=${userId}`,
+    `${NPA_BASE}/_action/update-work-effort?userId=${uid}`,
     payload,
   );
 }
@@ -228,7 +307,7 @@ export async function deleteWorkEffort(
 ): Promise<unknown> {
   return jobroomRequest(
     "DELETE",
-    `${BASE}/${proofId}/work-efforts/${workEffortId}`,
+    `${NPA_BASE}/${proofId}/work-efforts/${workEffortId}`,
   );
 }
 
