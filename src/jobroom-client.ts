@@ -101,11 +101,23 @@ async function jobroomRequest(
   var token = sessionStorage.getItem('authenticationToken');
   if (!token) return JSON.stringify({error: 'NO_AUTH', message: 'Not logged in to job-room.ch. Please log in and try again.'});
 
+  var method = ${JSON.stringify(method)};
+  var body = ${bodyLiteral};
+
+  // Dedup guard: block duplicate POST/PUT requests within 5 seconds
+  if (method === 'POST' || method === 'PUT') {
+    var dedupKey = '__jr_dedup_' + method + '_' + (body || '').substring(0, 100);
+    var lastCall = window[dedupKey];
+    var now = Date.now();
+    if (lastCall && (now - lastCall) < 5000) {
+      return JSON.stringify({deduplicated: true, message: 'Duplicate request blocked (same body within 5s)'});
+    }
+    window[dedupKey] = now;
+  }
+
   var lang = (document.cookie.match(/NG_TRANSLATE_LANG_KEY=([^;]+)/) || [])[1] || 'de';
   var ng = btoa(lang);
-  var method = ${JSON.stringify(method)};
   var path = ${JSON.stringify(path)};
-  var body = ${bodyLiteral};
   var sep = path.indexOf('?') >= 0 ? '&' : '?';
   var url = path + sep + '_ng=' + ng;
 
@@ -272,18 +284,67 @@ function buildWorkEffortPayload(data: CreateWorkEffortData): Record<string, unkn
   };
 }
 
-/** Create a new work effort in a proof record */
+/** Create a new work effort in a proof record (with dedup check) */
 export async function createWorkEffort(
   data: CreateWorkEffortData,
   userId?: string,
 ): Promise<unknown> {
   const uid = userId || await getUserId();
+
+  // Dedup check: look for existing effort with same company + occupation in current month
+  const existing = await findExistingEffort(data, uid);
+  if (existing) {
+    return {
+      deduplicated: true,
+      message: `Work effort already exists: "${data.occupation}" at ${data.companyName} (${data.applyDate}). Skipping creation.`,
+      existingId: (existing as Record<string, unknown>).id,
+    };
+  }
+
   const payload = buildWorkEffortPayload(data);
   return jobroomRequest(
     "POST",
     `${NPA_BASE}/_action/add-work-effort?userId=${uid}`,
     payload,
   );
+}
+
+/** Check if a matching work effort already exists for this month */
+async function findExistingEffort(
+  data: CreateWorkEffortData,
+  userId: string,
+): Promise<unknown | null> {
+  try {
+    const proofs = await listProofs(userId, 0) as {
+      content?: Array<{ id: string; controlPeriod?: { value: string } }>;
+    };
+
+    if (!proofs?.content?.length) return null;
+
+    // Find the proof for the target month (YYYY-MM)
+    const targetMonth = data.applyDate.substring(0, 7);
+    const proof = proofs.content.find(
+      (p) => p.controlPeriod?.value === targetMonth,
+    );
+    if (!proof) return null;
+
+    // Get full proof with work efforts
+    const fullProof = await getProof(proof.id) as { workEfforts?: WorkEffort[] };
+
+    if (!fullProof?.workEfforts?.length) return null;
+
+    // Match by company name + occupation (case-insensitive)
+    const companyLower = data.companyName.toLowerCase();
+    const occupationLower = data.occupation.toLowerCase();
+    return fullProof.workEfforts.find((e) => {
+      const existingCompany = (e.applyChannel?.address?.name || "").toLowerCase();
+      const existingOccupation = (e.occupation || "").toLowerCase();
+      return existingCompany === companyLower && existingOccupation === occupationLower;
+    }) || null;
+  } catch {
+    // If dedup check fails, proceed with creation (fail-open)
+    return null;
+  }
 }
 
 /** Update an existing work effort */

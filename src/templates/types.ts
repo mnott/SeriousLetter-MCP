@@ -4,7 +4,12 @@
  * Each job board has a predictable HTML structure. Templates map that structure
  * to structured fields without needing an AI model — just CSS selectors, regex,
  * and meta tag lookups.
+ *
+ * For JS-heavy sites (method: "playwright"), the template provides a
+ * `playwrightExtract` function that drives a headless browser instead.
  */
+
+import type { Page } from "playwright";
 
 /** How to extract a single field from the HTML */
 export interface FieldExtractor {
@@ -39,6 +44,13 @@ export interface SiteTemplate {
     description: FieldExtractor;
     [key: string]: FieldExtractor;
   };
+  /**
+   * Custom Playwright extraction function for JS-heavy sites.
+   * Receives a Playwright Page and the target URL. Handles navigation,
+   * waiting, and extraction — returns partial ScrapedJob fields.
+   * Only used when method is "playwright".
+   */
+  playwrightExtract?: (page: Page, url: string) => Promise<Partial<ScrapedJob>>;
 }
 
 /** Result of scraping a job listing */

@@ -2,20 +2,138 @@
  * SeriousLetter API client.
  *
  * Wraps the SeriousLetter external API (token-gated, /api/v1/*).
- * Configured via environment variables:
+ * Supports multiple user profiles with runtime switching.
+ *
+ * Configuration:
  *   SL_API_URL   — base URL (default: https://jobs.seriousletter.com)
- *   SL_API_TOKEN — API token (required)
+ *   SL_API_TOKEN — legacy single-token fallback
+ *
+ * User profiles are persisted to ~/.seriousletter-mcp-users.json
  */
 
-const API_URL = process.env.SL_API_URL || "https://jobs.seriousletter.com";
-const API_TOKEN = process.env.SL_API_TOKEN || "";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 
-function ensureToken(): void {
-  if (!API_TOKEN) {
+const API_URL = process.env.SL_API_URL || "https://jobs.seriousletter.com";
+const USERS_FILE = join(homedir(), ".seriousletter-mcp-users.json");
+
+// --- User profile store ---
+
+interface UserProfile {
+  name: string;
+  token: string;
+}
+
+// File-persisted registry: maps user names → tokens (shared across sessions)
+// Active user is per-session (in memory only) so concurrent sessions can serve different users.
+
+interface UserRegistry {
+  users: Record<string, UserProfile>;
+}
+
+let registry: UserRegistry = { users: {} };
+let activeUser: string | null = null; // per-session, NOT persisted
+
+function loadRegistry(): void {
+  if (existsSync(USERS_FILE)) {
+    try {
+      const raw = JSON.parse(readFileSync(USERS_FILE, "utf-8"));
+      // Handle legacy format that had activeUser in file
+      registry = { users: raw.users || {} };
+    } catch {
+      console.error("[SL] Failed to parse users file, starting fresh");
+      registry = { users: {} };
+    }
+  }
+
+  // Seed from legacy SL_API_TOKEN env var if no users exist
+  const legacyToken = process.env.SL_API_TOKEN || "";
+  if (Object.keys(registry.users).length === 0 && legacyToken) {
+    registry.users["default"] = { name: "default", token: legacyToken };
+    activeUser = "default";
+    saveRegistry();
+  }
+}
+
+function saveRegistry(): void {
+  writeFileSync(USERS_FILE, JSON.stringify(registry, null, 2), "utf-8");
+}
+
+// Load on module init
+loadRegistry();
+
+// --- Public user management API ---
+
+export function listUsers(): { activeUser: string | null; users: string[] } {
+  return {
+    activeUser,
+    users: Object.keys(registry.users),
+  };
+}
+
+export function switchUser(name: string): string {
+  // Reload registry in case another session added a user
+  loadRegistry();
+
+  const key = name.toLowerCase();
+  if (!registry.users[key]) {
     throw new Error(
-      "SL_API_TOKEN not set. Generate one at your SeriousLetter instance under Settings > API Tokens.",
+      `User "${name}" not found. Known users: ${Object.keys(registry.users).join(", ") || "(none)"}. ` +
+      `Use sl_add_user to register a new user with their API token.`,
     );
   }
+  activeUser = key;
+  return `Switched to user: ${registry.users[key].name} (this session only)`;
+}
+
+export function addUser(name: string, token: string): string {
+  // Reload to avoid overwriting changes from other sessions
+  loadRegistry();
+
+  const key = name.toLowerCase();
+  const isUpdate = !!registry.users[key];
+  registry.users[key] = { name, token };
+  saveRegistry();
+
+  // Auto-switch in this session
+  activeUser = key;
+
+  const action = isUpdate ? "updated" : "registered";
+  return `User "${name}" ${action} and activated. Token prefix: ${token.substring(0, 8)}...`;
+}
+
+export function removeUser(name: string): string {
+  loadRegistry();
+
+  const key = name.toLowerCase();
+  if (!registry.users[key]) {
+    throw new Error(`User "${name}" not found.`);
+  }
+  delete registry.users[key];
+  if (activeUser === key) {
+    activeUser = null;
+  }
+  saveRegistry();
+  return `User "${name}" removed.`;
+}
+
+export function getActiveUserName(): string | null {
+  if (!activeUser || !registry.users[activeUser]) return null;
+  return registry.users[activeUser].name;
+}
+
+// --- Internal token resolution ---
+
+function getActiveToken(): string {
+  if (activeUser && registry.users[activeUser]) {
+    return registry.users[activeUser].token;
+  }
+  const available = Object.keys(registry.users);
+  const hint = available.length > 0
+    ? `Known users: ${available.join(", ")}. Use sl_switch_user to select one.`
+    : "Use sl_add_user to register a user with their API token.";
+  throw new Error(`No active user for this session. ${hint}`);
 }
 
 async function apiRequest(
@@ -23,11 +141,11 @@ async function apiRequest(
   path: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {
-  ensureToken();
+  const token = getActiveToken();
 
   const url = `${API_URL}${path}`;
   const headers: Record<string, string> = {
-    "X-API-Token": API_TOKEN,
+    "X-API-Token": token,
     "Content-Type": "application/json",
   };
 
@@ -301,15 +419,15 @@ export async function runPipeline(
 // --- Export ---
 
 export async function exportLetterPdf(letterId: number, template?: string): Promise<Response> {
-  ensureToken();
+  const token = getActiveToken();
   const query = template ? `?template=${template}` : "";
   const url = `${API_URL}/api/v1/export/letters/${letterId}/pdf${query}`;
-  return fetch(url, { headers: { "X-API-Token": API_TOKEN } });
+  return fetch(url, { headers: { "X-API-Token": token } });
 }
 
 export async function exportCvPdf(profileUuid: string, template?: string): Promise<Response> {
-  ensureToken();
+  const token = getActiveToken();
   const query = template ? `?template=${template}` : "";
   const url = `${API_URL}/api/v1/export/cvs/${profileUuid}/pdf${query}`;
-  return fetch(url, { headers: { "X-API-Token": API_TOKEN } });
+  return fetch(url, { headers: { "X-API-Token": token } });
 }

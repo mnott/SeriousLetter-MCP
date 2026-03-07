@@ -8,11 +8,48 @@
  * No AI model needed — extraction is deterministic.
  */
 
+import type { Browser } from "playwright";
 import type { SiteTemplate, ScrapedJob, FieldExtractor } from "./templates/types.js";
 import { linkedinTemplate } from "./templates/linkedin.js";
+import { glassdoorTemplate } from "./templates/glassdoor.js";
 
 /** All registered site templates */
-const templates: SiteTemplate[] = [linkedinTemplate];
+const templates: SiteTemplate[] = [linkedinTemplate, glassdoorTemplate];
+
+// --- Playwright browser lifecycle (lazy singleton) ---
+
+let _browser: Browser | null = null;
+
+/** Get or launch the shared browser instance.
+ *  Uses system Chrome in non-headless mode to avoid bot detection on sites
+ *  like Glassdoor. The window is minimized to stay out of the way. */
+async function getBrowser(): Promise<Browser> {
+  if (_browser?.isConnected()) return _browser;
+  const { chromium } = await import("playwright");
+  _browser = await chromium.launch({
+    channel: "chrome",
+    headless: false,
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--window-position=-2400,-2400",
+      "--window-size=1,1",
+    ],
+  });
+  return _browser;
+}
+
+/** Close the shared browser (called on process exit). */
+async function closeBrowser(): Promise<void> {
+  if (_browser) {
+    await _browser.close().catch(() => {});
+    _browser = null;
+  }
+}
+
+// Clean up browser on exit
+for (const sig of ["SIGTERM", "SIGINT", "beforeExit"] as const) {
+  process.on(sig, () => { closeBrowser(); });
+}
 
 /** Find the template that matches a URL */
 export function findTemplate(url: string): SiteTemplate | undefined {
@@ -93,11 +130,32 @@ export async function scrapeJob(url: string): Promise<ScrapedJob> {
     );
   }
 
-  if (template.method !== "http") {
-    throw new Error(
-      `Template "${template.name}" requires ${template.method} method, which is not yet implemented.`,
-    );
+  // --- Playwright-based extraction ---
+  if (template.method === "playwright") {
+    if (!template.playwrightExtract) {
+      throw new Error(
+        `Template "${template.name}" uses playwright method but has no playwrightExtract function.`,
+      );
+    }
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    try {
+      const result = await template.playwrightExtract(page, url);
+      return {
+        title: result.title || "",
+        company: result.company || "",
+        location: result.location || "",
+        description: result.description || "",
+        sourceUrl: url,
+        templateName: template.name,
+        extra: result.extra || {},
+      };
+    } finally {
+      await page.close();
+    }
   }
+
+  // --- HTTP-based extraction ---
 
   // Fetch the page
   const response = await fetch(url, {
