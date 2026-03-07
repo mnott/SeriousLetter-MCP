@@ -1,13 +1,36 @@
 {
   "name": "seriousletter-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "MCP server for SeriousLetter — scrape job listings and manage applications via Claude Code",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "seriousletter-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "claude",
+    "claude-code",
+    "job-application",
+    "cover-letter",
+    "cv",
+    "ai",
+    "seriousletter"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mnott/SeriousLetter-MCP.git"
+  },
+  "author": "Matthias Nott",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
