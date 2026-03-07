@@ -65,8 +65,8 @@ This compiles TypeScript to `dist/index.js`.
 
 ### 4. Get an API token
 
-Sign in at [jobs.seriousletter.com](https://jobs.seriousletter.com), open your
-profile, go to **API Tokens**, and generate a token.
+Sign in at [jobs.seriousletter.com](https://jobs.seriousletter.com), open
+**Settings**, go to **API Tokens**, and generate a token.
 
 ### 5. Register the server in Claude Code
 
