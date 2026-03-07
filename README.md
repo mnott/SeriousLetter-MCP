@@ -1,7 +1,7 @@
 # SeriousLetter MCP
 
 An MCP (Model Context Protocol) server that connects Claude Code to the
-[SeriousLetter](https://jobs.seriousletter.com) job application platform.
+[SeriousLetter](https://seriousletter.com) job application platform.
 
 Once configured, you can manage your entire job search from inside Claude Code:
 scrape listings, maintain your pipeline, generate cover letters, export PDFs,
