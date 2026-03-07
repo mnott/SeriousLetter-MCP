@@ -10,6 +10,17 @@ and file Swiss RAV/NPA work efforts — all without leaving the terminal.
 Repository: [github.com/mnott/SeriousLetter-MCP](https://github.com/mnott/SeriousLetter-MCP)
 
 
+## Quick Start
+
+Tell Claude Code:
+
+> Clone https://github.com/mnott/SeriousLetter-MCP and set it up for me
+
+Claude finds the setup skill, checks your system, clones the repo, builds it,
+and registers itself as an MCP server. You just provide your API token when
+asked — Claude does the rest.
+
+
 ## Features
 
 - **50 tools** covering every part of the job application workflow
