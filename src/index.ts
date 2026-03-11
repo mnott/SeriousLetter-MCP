@@ -631,7 +631,16 @@ server.registerTool("sl_update_job", {
     source_url: z.string().optional().describe("Source URL"),
     application_url: z.string().optional().describe("Application URL"),
     contact_person: z.string().optional().describe("Contact person"),
-    company_uuid: z.string().optional().describe("UUID of existing company record to link"),
+    company_uuid: z.string().optional().describe("UUID of existing company record to link (auto-syncs company address into job)"),
+    company_address_line1: z.string().optional().describe("Company address line 1"),
+    company_city: z.string().optional().describe("Company city"),
+    company_postal_code: z.string().optional().describe("Company postal code"),
+    company_country_code: z.string().optional().describe("Company country code (e.g. CH, DE, FR)"),
+    company_country: z.string().optional().describe("Company country name"),
+    is_recruiting_agency: z.boolean().optional().describe("Whether the company is a recruiting agency"),
+    applied_date: z.string().optional().describe("Date application was submitted (YYYY-MM-DD)"),
+    rejected_date: z.string().optional().describe("Date rejection was received (YYYY-MM-DD)"),
+    status_change_notes: z.string().optional().describe("Notes about the status change"),
   },
 }, async ({ job_uuid, ...data }) => {
   try {
