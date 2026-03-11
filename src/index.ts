@@ -423,7 +423,7 @@ server.registerTool("sl_create_job", {
     application_url: z.string().optional().describe("URL of the application form"),
     location: z.string().optional().describe("Job location"),
     salary_range: z.string().optional().describe("Salary range as free text"),
-    priority: z.number().optional().describe("Priority 1-5 (1=highest)"),
+    priority: z.coerce.number().optional().describe("Priority 1-5 (1=highest)"),
     language: z.string().optional().describe("Job language code (en, de, fr)"),
     job_description: z.string().optional().describe("Full job description in markdown"),
     is_recruiting_agency: z.boolean().optional().describe("True if company is a recruiter"),
@@ -445,8 +445,8 @@ server.registerTool("sl_list_jobs", {
     "List job applications from SeriousLetter. Returns newest first with pagination.",
   inputSchema: {
     status: z.string().optional().describe("Filter by status: opportunity, editing, applied, rejected, not_applying, outdated"),
-    page: z.number().optional().describe("Page number (default 1)"),
-    page_size: z.number().optional().describe("Results per page (default 20, max 100)"),
+    page: z.coerce.number().optional().describe("Page number (default 1)"),
+    page_size: z.coerce.number().optional().describe("Results per page (default 20, max 100)"),
   },
 }, async (params) => {
   try {
@@ -464,7 +464,7 @@ server.registerTool("sl_search_jobs", {
     "Search jobs in SeriousLetter by company name or position title. Fuzzy matching.",
   inputSchema: {
     q: z.string().describe("Search query"),
-    page: z.number().optional().describe("Page number"),
+    page: z.coerce.number().optional().describe("Page number"),
   },
 }, async ({ q, page }) => {
   try {
@@ -498,7 +498,7 @@ server.registerTool("sl_scrape_and_create", {
   inputSchema: {
     url: z.string().url().describe("The job listing URL to scrape and create"),
     language: z.string().optional().describe("Job language code (en, de, fr)"),
-    priority: z.number().optional().describe("Priority 1-5 (1=highest)"),
+    priority: z.coerce.number().optional().describe("Priority 1-5 (1=highest)"),
     status: z.string().optional().describe("Initial status (default: opportunity)"),
   },
 }, async ({ url, language, priority, status }) => {
@@ -625,7 +625,7 @@ server.registerTool("sl_update_job", {
     position_title: z.string().optional().describe("Updated position title"),
     location: z.string().optional().describe("Updated location"),
     salary_range: z.string().optional().describe("Updated salary range"),
-    priority: z.number().optional().describe("Priority 1-5 (1=highest)"),
+    priority: z.coerce.number().optional().describe("Priority 1-5 (1=highest)"),
     language: z.string().optional().describe("Job language code"),
     job_description: z.string().optional().describe("Updated job description"),
     source_url: z.string().optional().describe("Source URL"),
@@ -692,7 +692,7 @@ server.registerTool("sl_list_companies", {
     "List or search companies in SeriousLetter. Useful for finding existing company records before creating jobs.",
   inputSchema: {
     q: z.string().optional().describe("Search query (company name)"),
-    page: z.number().optional().describe("Page number"),
+    page: z.coerce.number().optional().describe("Page number"),
   },
 }, async ({ q, page }) => {
   try {
@@ -822,7 +822,7 @@ server.registerTool("sl_get_letter", {
   description:
     "Get a single cover letter by its ID. Returns full content and metadata.",
   inputSchema: {
-    letter_id: z.number().describe("ID of the letter"),
+    letter_id: z.coerce.number().describe("ID of the letter"),
   },
 }, async ({ letter_id }) => {
   try {
@@ -839,7 +839,7 @@ server.registerTool("sl_update_letter", {
   description:
     "Update a cover letter's content or name. Use after refining a generated letter.",
   inputSchema: {
-    letter_id: z.number().describe("ID of the letter"),
+    letter_id: z.coerce.number().describe("ID of the letter"),
     content: z.string().optional().describe("Updated letter content"),
     version_name: z.string().optional().describe("Updated version name"),
   },
@@ -881,7 +881,7 @@ server.registerTool("sl_export_letter_pdf", {
   description:
     "Export a cover letter as PDF. Returns the PDF binary. Use sl_list_letters to find the letter ID first.",
   inputSchema: {
-    letter_id: z.number().describe("ID of the letter to export"),
+    letter_id: z.coerce.number().describe("ID of the letter to export"),
     template: z.string().optional().describe("Letter template to use (uses user's default if not set)"),
   },
 }, async ({ letter_id, template }) => {
@@ -1027,7 +1027,7 @@ server.registerTool("sl_get_conversation", {
   description:
     "Get a saved conversation by ID with all messages. Use sl_list_conversations to find conversation IDs first.",
   inputSchema: {
-    conversation_id: z.number().describe("ID of the saved conversation"),
+    conversation_id: z.coerce.number().describe("ID of the saved conversation"),
   },
 }, async ({ conversation_id }) => {
   try {
@@ -1123,8 +1123,8 @@ server.registerTool("sl_update_preferences", {
   description:
     "Update user job search preferences. Only include fields you want to change.",
   inputSchema: {
-    salary_min: z.number().optional().describe("Minimum salary"),
-    salary_max: z.number().optional().describe("Maximum salary"),
+    salary_min: z.coerce.number().optional().describe("Minimum salary"),
+    salary_max: z.coerce.number().optional().describe("Maximum salary"),
     salary_currency: z.string().optional().describe("Currency: CHF, EUR, USD, GBP"),
     availability: z.string().optional().describe("immediately, 1_month, 2_months, 3_months, by_agreement"),
     availability_date: z.string().optional().describe("Available from date (YYYY-MM-DD)"),
@@ -1159,14 +1159,14 @@ server.registerTool("sl_search_jobroom", {
   inputSchema: {
     keywords: z.array(z.string()).optional().describe("Search keywords (e.g. ['software engineer', 'devops'])"),
     canton_codes: z.array(z.string()).optional().describe("Swiss canton codes to filter by (e.g. ['VD', 'GE', 'ZH'])"),
-    workload_min: z.number().optional().describe("Minimum workload percentage (10-100)"),
-    workload_max: z.number().optional().describe("Maximum workload percentage (10-100)"),
+    workload_min: z.coerce.number().optional().describe("Minimum workload percentage (10-100)"),
+    workload_max: z.coerce.number().optional().describe("Maximum workload percentage (10-100)"),
     permanent: z.boolean().optional().describe("Only permanent positions"),
-    online_since: z.number().optional().describe("Posted within the last N days"),
+    online_since: z.coerce.number().optional().describe("Posted within the last N days"),
     company_name: z.string().optional().describe("Filter by company name"),
     language: z.string().optional().describe("Listing language: de, fr, en, it"),
-    page: z.number().optional().describe("Page number (default 0)"),
-    page_size: z.number().optional().describe("Results per page (default 20, max 100)"),
+    page: z.coerce.number().optional().describe("Page number (default 0)"),
+    page_size: z.coerce.number().optional().describe("Results per page (default 20, max 100)"),
   },
 }, async (params) => {
   try {
@@ -1215,7 +1215,7 @@ server.registerTool("sl_import_jobroom_job", {
     "Import a job from job-room.ch into SeriousLetter. Fetches the full listing, maps it to SL fields, checks for duplicates, and creates the job. Use sl_search_jobroom first to find the job ID.",
   inputSchema: {
     job_id: z.string().describe("UUID of the job-room.ch listing to import"),
-    priority: z.number().optional().describe("Priority 1-5 (1=highest)"),
+    priority: z.coerce.number().optional().describe("Priority 1-5 (1=highest)"),
     status: z.string().optional().describe("Initial status (default: opportunity)"),
   },
 }, async ({ job_id, priority, status }) => {
@@ -1295,7 +1295,7 @@ server.registerTool("sl_jobroom_list_efforts", {
   description:
     "List work efforts (Arbeitsbemühungen) from job-room.ch. Shows all proof records and their entries. Requires Chrome to be open with an active job-room.ch session.",
   inputSchema: {
-    page: z.number().optional().describe("Page number (default 0)"),
+    page: z.coerce.number().optional().describe("Page number (default 0)"),
   },
 }, async ({ page }) => {
   try {
