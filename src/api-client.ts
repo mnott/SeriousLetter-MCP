@@ -223,6 +223,10 @@ export async function updateJob(
   return apiRequest("PUT", `/api/v1/jobs/${jobUuid}`, data);
 }
 
+export async function deleteJob(jobUuid: string): Promise<unknown> {
+  return apiRequest("DELETE", `/api/v1/jobs/${jobUuid}`);
+}
+
 // --- Companies ---
 
 export async function searchCompanies(q?: string, page?: number): Promise<unknown> {

@@ -62,6 +62,7 @@ const server = new McpServer(
       "| `sl_get_profile` | Get full CV content (experiences, skills, education, etc.) |",
       "| `sl_copy_cv_to_job` | Copy a CV profile to a job |",
       "| `sl_update_job` | Update an existing job |",
+      "| `sl_delete_job` | Delete a job permanently |",
       "| `sl_get_job` | Get full details of a specific job |",
       "| `sl_list_companies` | List/search companies |",
       "| `sl_create_company` | Create a new company |",
@@ -650,6 +651,23 @@ server.registerTool("sl_get_job", {
   try {
     const result = await api.getJob(job_uuid);
     return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_delete_job ---
+
+server.registerTool("sl_delete_job", {
+  description:
+    "Delete a job from SeriousLetter permanently. Use sl_list_jobs or sl_search_jobs to find the job UUID first.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job to delete"),
+  },
+}, async ({ job_uuid }) => {
+  try {
+    await api.deleteJob(job_uuid);
+    return textResponse(`Job ${job_uuid} deleted successfully.`);
   } catch (err) {
     return errorResponse(err);
   }
