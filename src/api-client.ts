@@ -264,6 +264,10 @@ export async function updateCompany(
   return apiRequest("PUT", `/api/v1/companies/${companyUuid}`, data);
 }
 
+export async function deleteCompany(companyUuid: string): Promise<unknown> {
+  return apiRequest("DELETE", `/api/v1/companies/${companyUuid}`);
+}
+
 // --- Discovery ---
 
 export async function discover(): Promise<unknown> {

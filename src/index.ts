@@ -67,6 +67,7 @@ const server = new McpServer(
       "| `sl_list_companies` | List/search companies |",
       "| `sl_create_company` | Create a new company |",
       "| `sl_update_company` | Update an existing company |",
+      "| `sl_delete_company` | Delete a company permanently |",
       "| `sl_list_letters` | List cover letters for a job |",
       "| `sl_create_letter` | Save a generated cover letter to a job |",
       "| `sl_get_letter` | Get a single letter by ID |",
@@ -746,6 +747,23 @@ server.registerTool("sl_update_company", {
   try {
     const result = await api.updateCompany(company_uuid, data);
     return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_delete_company ---
+
+server.registerTool("sl_delete_company", {
+  description:
+    "Delete a company from SeriousLetter permanently. Use sl_list_companies to find the company UUID first.",
+  inputSchema: {
+    company_uuid: z.string().describe("UUID of the company to delete"),
+  },
+}, async ({ company_uuid }) => {
+  try {
+    await api.deleteCompany(company_uuid);
+    return textResponse(`Company ${company_uuid} deleted successfully.`);
   } catch (err) {
     return errorResponse(err);
   }
