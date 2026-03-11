@@ -257,6 +257,13 @@ export async function createCompany(data: CreateCompanyData): Promise<unknown> {
   return apiRequest("POST", "/api/v1/companies", data as unknown as Record<string, unknown>);
 }
 
+export async function updateCompany(
+  companyUuid: string,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return apiRequest("PUT", `/api/v1/companies/${companyUuid}`, data);
+}
+
 // --- Discovery ---
 
 export async function discover(): Promise<unknown> {

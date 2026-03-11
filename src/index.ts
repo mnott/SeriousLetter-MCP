@@ -66,6 +66,7 @@ const server = new McpServer(
       "| `sl_get_job` | Get full details of a specific job |",
       "| `sl_list_companies` | List/search companies |",
       "| `sl_create_company` | Create a new company |",
+      "| `sl_update_company` | Update an existing company |",
       "| `sl_list_letters` | List cover letters for a job |",
       "| `sl_create_letter` | Save a generated cover letter to a job |",
       "| `sl_get_letter` | Get a single letter by ID |",
@@ -629,6 +630,7 @@ server.registerTool("sl_update_job", {
     source_url: z.string().optional().describe("Source URL"),
     application_url: z.string().optional().describe("Application URL"),
     contact_person: z.string().optional().describe("Contact person"),
+    company_uuid: z.string().optional().describe("UUID of existing company record to link"),
   },
 }, async ({ job_uuid, ...data }) => {
   try {
@@ -706,12 +708,43 @@ server.registerTool("sl_create_company", {
     country: z.string().optional().describe("Country name"),
     contact_person: z.string().optional().describe("Contact person"),
     contact_email: z.string().optional().describe("Contact email"),
+    contact_phone: z.string().optional().describe("Contact phone number"),
     notes: z.string().optional().describe("Notes about the company"),
     is_recruiting_agency: z.boolean().optional().describe("True if this is a recruiting agency"),
   },
 }, async (params) => {
   try {
     const result = await api.createCompany(params);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_update_company ---
+
+server.registerTool("sl_update_company", {
+  description:
+    "Update an existing company record in SeriousLetter. Use sl_list_companies to find the company UUID first.",
+  inputSchema: {
+    company_uuid: z.string().describe("UUID of the company to update"),
+    name: z.string().optional().describe("Company name"),
+    address_line1: z.string().optional().describe("Street address line 1"),
+    address_line2: z.string().optional().describe("Street address line 2"),
+    city: z.string().optional().describe("City"),
+    postal_code: z.string().optional().describe("Postal code"),
+    country: z.string().optional().describe("Country name"),
+    country_code: z.string().optional().describe("Country code (e.g. CH, DE)"),
+    contact_person: z.string().optional().describe("Contact person"),
+    contact_email: z.string().optional().describe("Contact email"),
+    contact_phone: z.string().optional().describe("Contact phone number"),
+    website: z.string().optional().describe("Company website URL"),
+    notes: z.string().optional().describe("Notes about the company"),
+    is_recruiting_agency: z.boolean().optional().describe("True if this is a recruiting agency"),
+  },
+}, async ({ company_uuid, ...data }) => {
+  try {
+    const result = await api.updateCompany(company_uuid, data);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);
