@@ -13,6 +13,8 @@
  *   sl_list_templates   — Show available scraping templates
  *   sl_list_profiles    — List CV profiles for copying to jobs
  *   sl_copy_cv_to_job   — Copy a CV profile to a job
+ *   sl_delete_cv_from_job — Delete a job-specific CV (when wrong base was copied)
+ *   sl_delete_letter    — Delete a cover letter by ID (prune rejected drafts)
  *
  * stdout is the JSON-RPC transport — all debug output goes to stderr.
  */
@@ -60,7 +62,12 @@ const server = new McpServer(
       "| `sl_list_templates` | Show available scraping templates |",
       "| `sl_list_profiles` | List CV profiles |",
       "| `sl_get_profile` | Get full CV content (experiences, skills, education, etc.) |",
+      "| `sl_get_profile_summary` | Get the summary text from a base CV profile |",
+      "| `sl_set_profile_summary` | Update the summary text on a base CV profile |",
       "| `sl_copy_cv_to_job` | Copy a CV profile to a job |",
+      "| `sl_delete_cv_from_job` | Delete a job-specific CV (e.g. wrong base) |",
+      "| `sl_get_cv_summary` | Get the summary text from a job CV |",
+      "| `sl_set_cv_summary` | Update the summary text on a job CV |",
       "| `sl_update_job` | Update an existing job |",
       "| `sl_delete_job` | Delete a job permanently |",
       "| `sl_get_job` | Get full details of a specific job |",
@@ -72,6 +79,7 @@ const server = new McpServer(
       "| `sl_create_letter` | Save a generated cover letter to a job |",
       "| `sl_get_letter` | Get a single letter by ID |",
       "| `sl_update_letter` | Update letter content or name |",
+      "| `sl_delete_letter` | Delete a cover letter by ID (prune rejected drafts) |",
       "| `sl_generate_letter` | Run SL's 3-stage pipeline server-side |",
       "| `sl_export_letter_pdf` | Export a letter as PDF |",
       "| `sl_export_cv_pdf` | Export a CV/profile as PDF |",
@@ -83,6 +91,11 @@ const server = new McpServer(
       "| `sl_list_prompts` | List available AI pipelines/prompts (metadata only) |",
       "| `sl_get_prompt` | Get pipeline detail: stages, variables, execution info |",
       "| `sl_run_prompt` | Run an AI pipeline server-side on a job (gap analysis, skill analysis, etc.) |",
+      "| `sl_list_text_blocks` | List reusable text blocks (Textbausteine) for cover letters |",
+      "| `sl_get_text_block` | Get a single text block by UUID |",
+      "| `sl_create_text_block` | Create a new reusable text block |",
+      "| `sl_update_text_block` | Update a text block |",
+      "| `sl_delete_text_block` | Delete a text block |",
       "| `sl_get_preferences` | Get user job search preferences |",
       "| `sl_update_preferences` | Update user preferences |",
       "| `sl_search_jobroom` | Search job-room.ch for jobs (keywords, canton, workload, etc.) |",
@@ -267,6 +280,13 @@ const server = new McpServer(
       "- Check `salary_range` on the job or `salary_min`/`salary_max` in preferences",
       "- Check `availability` and `availability_date` for closing paragraph",
       "",
+      "**Using Text Blocks (Textbausteine):**",
+      "- Before writing a cover letter, call `sl_list_text_blocks` filtered by the job's language",
+      "- Each text block has an `instruction` field describing when to use it (e.g. 'Use to establish credibility in technical roles')",
+      "- Match the instruction against the job description to decide which blocks to include",
+      "- Insert matching blocks naturally into the letter — they are pre-approved paragraphs the user wants reused",
+      "- Blocks contain markdown with links — preserve all formatting when inserting",
+      "",
       "**To save a generated letter:** Use `sl_create_letter` to store it in SeriousLetter.",
       "**To use the app's pipeline instead:** Use `sl_generate_letter` which runs the full",
       "3-stage pipeline server-side with the app's configured prompts.",
@@ -426,7 +446,7 @@ server.registerTool("sl_create_job", {
     priority: z.coerce.number().optional().describe("Priority 1-5 (1=highest)"),
     language: z.string().optional().describe("Job language code (en, de, fr)"),
     job_description: z.string().optional().describe("Full job description in markdown"),
-    is_recruiting_agency: z.boolean().optional().describe("True if company is a recruiter"),
+    is_recruiting_agency: z.coerce.boolean().optional().describe("True if company is a recruiter"),
     contact_person: z.string().optional().describe("Contact person name"),
   },
 }, async (params) => {
@@ -595,6 +615,41 @@ server.registerTool("sl_get_profile", {
   }
 });
 
+// --- sl_get_profile_summary ---
+
+server.registerTool("sl_get_profile_summary", {
+  description:
+    "Get the summary text from a base CV profile. The summary is the executive paragraph at the top of the CV.",
+  inputSchema: {
+    profile_uuid: z.string().describe("UUID of the CV profile"),
+  },
+}, async ({ profile_uuid }) => {
+  try {
+    const result = await api.getProfileSummary(profile_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_set_profile_summary ---
+
+server.registerTool("sl_set_profile_summary", {
+  description:
+    "Update the summary text on a base CV profile. This changes the executive paragraph at the top of the CV. Use sl_list_profiles to find profile UUIDs.",
+  inputSchema: {
+    profile_uuid: z.string().describe("UUID of the CV profile"),
+    content: z.string().describe("New summary text"),
+  },
+}, async ({ profile_uuid, content }) => {
+  try {
+    const result = await api.setProfileSummary(profile_uuid, content);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
 // --- sl_copy_cv_to_job ---
 
 server.registerTool("sl_copy_cv_to_job", {
@@ -608,6 +663,61 @@ server.registerTool("sl_copy_cv_to_job", {
 }, async ({ job_uuid, profile_uuid, name }) => {
   try {
     const result = await api.copyProfileToJob(job_uuid, profile_uuid, name);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_delete_cv_from_job ---
+
+server.registerTool("sl_delete_cv_from_job", {
+  description:
+    "Delete a job-specific CV from a job. Use this to remove the wrong CV profile when the wrong base (e.g. regular vs consultant) was copied. Use sl_get_job to find the CV UUIDs attached to a job.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    cv_uuid: z.string().describe("UUID of the job-specific CV to delete"),
+  },
+}, async ({ job_uuid, cv_uuid }) => {
+  try {
+    const result = await api.deleteJobCv(job_uuid, cv_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_cv_summary ---
+
+server.registerTool("sl_get_cv_summary", {
+  description:
+    "Get the summary text from a job-specific CV. The summary is the executive paragraph at the top of the CV. Use sl_get_job to find the CV UUIDs attached to a job.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    cv_uuid: z.string().describe("UUID of the job-specific CV"),
+  },
+}, async ({ job_uuid, cv_uuid }) => {
+  try {
+    const result = await api.getJobCvSummary(job_uuid, cv_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_set_cv_summary ---
+
+server.registerTool("sl_set_cv_summary", {
+  description:
+    "Update the summary text on a job-specific CV. The summary is the executive paragraph at the top of the CV - tailor it to match the specific job you're applying to. Use sl_get_job to find the CV UUIDs attached to a job.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    cv_uuid: z.string().describe("UUID of the job-specific CV"),
+    content: z.string().describe("New summary text for this CV"),
+  },
+}, async ({ job_uuid, cv_uuid, content }) => {
+  try {
+    const result = await api.setJobCvSummary(job_uuid, cv_uuid, content);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);
@@ -637,7 +747,7 @@ server.registerTool("sl_update_job", {
     company_postal_code: z.string().optional().describe("Company postal code"),
     company_country_code: z.string().optional().describe("Company country code (e.g. CH, DE, FR)"),
     company_country: z.string().optional().describe("Company country name"),
-    is_recruiting_agency: z.boolean().optional().describe("Whether the company is a recruiting agency"),
+    is_recruiting_agency: z.coerce.boolean().optional().describe("Whether the company is a recruiting agency"),
     applied_date: z.string().optional().describe("Date application was submitted (YYYY-MM-DD)"),
     rejected_date: z.string().optional().describe("Date rejection was received (YYYY-MM-DD)"),
     status_change_notes: z.string().optional().describe("Notes about the status change"),
@@ -720,7 +830,7 @@ server.registerTool("sl_create_company", {
     contact_email: z.string().optional().describe("Contact email"),
     contact_phone: z.string().optional().describe("Contact phone number"),
     notes: z.string().optional().describe("Notes about the company"),
-    is_recruiting_agency: z.boolean().optional().describe("True if this is a recruiting agency"),
+    is_recruiting_agency: z.coerce.boolean().optional().describe("True if this is a recruiting agency"),
   },
 }, async (params) => {
   try {
@@ -750,7 +860,7 @@ server.registerTool("sl_update_company", {
     contact_phone: z.string().optional().describe("Contact phone number"),
     website: z.string().optional().describe("Company website URL"),
     notes: z.string().optional().describe("Notes about the company"),
-    is_recruiting_agency: z.boolean().optional().describe("True if this is a recruiting agency"),
+    is_recruiting_agency: z.coerce.boolean().optional().describe("True if this is a recruiting agency"),
   },
 }, async ({ company_uuid, ...data }) => {
   try {
@@ -849,6 +959,23 @@ server.registerTool("sl_update_letter", {
     if (content !== undefined) payload.final_content = content;
     if (version_name !== undefined) payload.version_name = version_name;
     const result = await api.updateLetter(letter_id, payload);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_delete_letter ---
+
+server.registerTool("sl_delete_letter", {
+  description:
+    "Delete a cover letter by ID. Use to prune rejected drafts when iterating across multiple letter versions on the same job. Use sl_list_letters to discover letter IDs.",
+  inputSchema: {
+    letter_id: z.coerce.number().describe("ID of the letter to delete"),
+  },
+}, async ({ letter_id }) => {
+  try {
+    const result = await api.deleteLetter(letter_id);
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);
@@ -1466,6 +1593,110 @@ server.registerTool("sl_remove_user", {
   try {
     const msg = api.removeUser(name);
     return textResponse({ message: msg });
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// =====================================================================
+// Text Blocks — Reusable cover letter paragraphs (Textbausteine)
+// =====================================================================
+
+// --- sl_list_text_blocks ---
+
+server.registerTool("sl_list_text_blocks", {
+  description:
+    "List reusable text blocks (Textbausteine) for cover letters. These are pre-written paragraphs the user has saved, each with a language and usage instruction describing when to include it. Filter by language to get blocks relevant to the job's language.",
+  inputSchema: {
+    language: z.string().optional().describe("Filter by language code (en, de, fr, es). Omit for all."),
+  },
+}, async ({ language }) => {
+  try {
+    const result = await api.listTextBlocks(language);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_get_text_block ---
+
+server.registerTool("sl_get_text_block", {
+  description:
+    "Get a single text block by UUID with full content.",
+  inputSchema: {
+    uuid: z.string().describe("UUID of the text block"),
+  },
+}, async ({ uuid }) => {
+  try {
+    const result = await api.getTextBlock(uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_create_text_block ---
+
+server.registerTool("sl_create_text_block", {
+  description:
+    "Create a new reusable text block for cover letters. Include a clear title, language, usage instruction (when/where to use it), and the markdown content.",
+  inputSchema: {
+    title: z.string().describe("Short title (e.g. 'Technical AI Credibility')"),
+    language: z.string().describe("Language code: en, de, fr, es"),
+    instruction: z.string().describe("Usage instruction — when/where to use this block in a cover letter"),
+    content: z.string().describe("The text block content (markdown supported)"),
+    sort_order: z.coerce.number().optional().describe("Sort order (lower = first). Default 0."),
+  },
+}, async ({ title, language, instruction, content, sort_order }) => {
+  try {
+    const result = await api.createTextBlock(title, language, instruction, content, sort_order);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_update_text_block ---
+
+server.registerTool("sl_update_text_block", {
+  description:
+    "Update an existing text block. Only include fields that need to change.",
+  inputSchema: {
+    uuid: z.string().describe("UUID of the text block to update"),
+    title: z.string().optional().describe("New title"),
+    language: z.string().optional().describe("New language code"),
+    instruction: z.string().optional().describe("New usage instruction"),
+    content: z.string().optional().describe("New content (markdown)"),
+    sort_order: z.coerce.number().optional().describe("New sort order"),
+  },
+}, async ({ uuid, ...data }) => {
+  try {
+    const updates: Record<string, unknown> = {};
+    if (data.title !== undefined) updates.title = data.title;
+    if (data.language !== undefined) updates.language = data.language;
+    if (data.instruction !== undefined) updates.instruction = data.instruction;
+    if (data.content !== undefined) updates.content = data.content;
+    if (data.sort_order !== undefined) updates.sort_order = data.sort_order;
+    const result = await api.updateTextBlock(uuid, updates);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_delete_text_block ---
+
+server.registerTool("sl_delete_text_block", {
+  description:
+    "Delete a text block permanently.",
+  inputSchema: {
+    uuid: z.string().describe("UUID of the text block to delete"),
+  },
+}, async ({ uuid }) => {
+  try {
+    const result = await api.deleteTextBlock(uuid);
+    return textResponse(result);
   } catch (err) {
     return errorResponse(err);
   }

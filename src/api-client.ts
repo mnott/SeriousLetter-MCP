@@ -302,6 +302,10 @@ export async function updateLetter(
   return apiRequest("PUT", `/api/v1/letters/${letterId}`, data);
 }
 
+export async function deleteLetter(letterId: number): Promise<unknown> {
+  return apiRequest("DELETE", `/api/v1/letters/${letterId}`);
+}
+
 export async function generateLetter(
   jobUuid: string,
   options?: { tone?: string; language?: string; profile_uuid?: string },
@@ -331,6 +335,13 @@ export async function copyProfileToJob(
   const body: Record<string, unknown> = {};
   if (name) body.name = name;
   return apiRequest("POST", `/api/v1/jobs/${jobUuid}/cvs/copy/${profileUuid}`, body);
+}
+
+export async function deleteJobCv(
+  jobUuid: string,
+  cvUuid: string,
+): Promise<unknown> {
+  return apiRequest("DELETE", `/api/v1/jobs/${jobUuid}/cvs/${cvUuid}`);
 }
 
 // --- Preferences ---
@@ -445,4 +456,65 @@ export async function exportCvPdf(profileUuid: string, template?: string): Promi
   const query = template ? `?template=${template}` : "";
   const url = `${API_URL}/api/v1/export/cvs/${profileUuid}/pdf${query}`;
   return fetch(url, { headers: { "X-API-Token": token } });
+}
+
+// --- Profile Summary ---
+
+export async function getProfileSummary(profileUuid: string): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/profiles/${profileUuid}/summary`);
+}
+
+export async function setProfileSummary(profileUuid: string, content: string): Promise<unknown> {
+  return apiRequest("PATCH", `/api/v1/profiles/${profileUuid}/summary`, { content });
+}
+
+// --- Job CV Summary ---
+
+export async function getJobCvSummary(
+  jobUuid: string,
+  cvUuid: string,
+): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/jobs/${jobUuid}/cvs/${cvUuid}/summary`);
+}
+
+export async function setJobCvSummary(
+  jobUuid: string,
+  cvUuid: string,
+  content: string,
+): Promise<unknown> {
+  return apiRequest("PATCH", `/api/v1/jobs/${jobUuid}/cvs/${cvUuid}/summary`, { content });
+}
+
+// --- Text Blocks ---
+
+export async function listTextBlocks(language?: string): Promise<unknown> {
+  const query = language ? `?language=${language}` : "";
+  return apiRequest("GET", `/api/v1/text-blocks${query}`);
+}
+
+export async function getTextBlock(uuid: string): Promise<unknown> {
+  return apiRequest("GET", `/api/v1/text-blocks/${uuid}`);
+}
+
+export async function createTextBlock(
+  title: string,
+  language: string,
+  instruction: string,
+  content: string,
+  sortOrder?: number,
+): Promise<unknown> {
+  const body: Record<string, unknown> = { title, language, instruction, content };
+  if (sortOrder !== undefined) body.sort_order = sortOrder;
+  return apiRequest("POST", "/api/v1/text-blocks", body);
+}
+
+export async function updateTextBlock(
+  uuid: string,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return apiRequest("PATCH", `/api/v1/text-blocks/${uuid}`, data);
+}
+
+export async function deleteTextBlock(uuid: string): Promise<unknown> {
+  return apiRequest("DELETE", `/api/v1/text-blocks/${uuid}`);
 }
