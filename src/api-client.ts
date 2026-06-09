@@ -485,6 +485,34 @@ export async function setJobCvSummary(
   return apiRequest("PATCH", `/api/v1/jobs/${jobUuid}/cvs/${cvUuid}/summary`, { content });
 }
 
+// --- Full CV content (profile_data) editing ---
+// profile_data carries the CV body: experiences, skills, education, certifications,
+// languages, awards, publications, references, testimonials, career_motivation, summary.
+// merge=PATCH (only the keys you send change); replace=PUT (full snapshot).
+
+export async function updateProfileData(
+  profileUuid: string,
+  profileData: Record<string, unknown>,
+  replace = false,
+): Promise<unknown> {
+  return apiRequest(replace ? "PUT" : "PATCH", `/api/v1/profiles/${profileUuid}/profile-data`, profileData);
+}
+
+export async function updateJobCvProfileData(
+  jobUuid: string,
+  cvUuid: string,
+  profileData: Record<string, unknown>,
+  replace = false,
+): Promise<unknown> {
+  return apiRequest(replace ? "PUT" : "PATCH", `/api/v1/jobs/${jobUuid}/cvs/${cvUuid}/profile-data`, profileData);
+}
+
+// Account-level personal info (shared across all CVs). API names map to user columns
+// server-side: name->full_name, linkedin->linkedin_url, github->github_url.
+export async function updatePersonalInfo(fields: Record<string, unknown>): Promise<unknown> {
+  return apiRequest("PATCH", `/api/v1/personal-info`, fields);
+}
+
 // --- Text Blocks ---
 
 export async function listTextBlocks(language?: string): Promise<unknown> {

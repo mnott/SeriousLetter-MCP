@@ -724,6 +724,85 @@ server.registerTool("sl_set_cv_summary", {
   }
 });
 
+// --- Full CV content editing (profile_data) ---
+
+const PROFILE_DATA_DESC =
+  "CV content object. Editable keys: summary, career_motivation, experiences[], skills, " +
+  "education[], certifications[], languages[], awards[], publications[], references[], " +
+  "testimonials[]. Workflow: fetch current content with sl_get_profile, modify the keys you " +
+  "want, send them back. Each key you include FULLY replaces that key (e.g. send the complete " +
+  "experiences[] array to change one bullet). personal_info is ignored here — use " +
+  "sl_update_personal_info for name/contact/nationalities.";
+
+server.registerTool("sl_update_profile", {
+  description:
+    "Edit the CV content of a base profile (experiences, skills, education, certifications, " +
+    "awards, languages, testimonials, publications, career_motivation, summary). Merges by " +
+    "default: only the keys you send change. Set replace=true to overwrite the entire CV body. " +
+    "Use sl_list_profiles for the profile UUID and sl_get_profile to read current content first.",
+  inputSchema: {
+    profile_uuid: z.string().describe("UUID of the base CV profile (sl_list_profiles)"),
+    profile_data: z.record(z.any()).describe(PROFILE_DATA_DESC),
+    replace: z.boolean().optional().describe("Full replace instead of merge (default false)"),
+  },
+}, async ({ profile_uuid, profile_data, replace }) => {
+  try {
+    const result = await api.updateProfileData(profile_uuid, profile_data, replace ?? false);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+server.registerTool("sl_update_job_cv", {
+  description:
+    "Edit the CV content of a job-specific CV (same as sl_update_profile, for a CV attached to a " +
+    "job). Merges by default; set replace=true to overwrite. Use sl_get_job to find the CV UUIDs.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    cv_uuid: z.string().describe("UUID of the job-specific CV"),
+    profile_data: z.record(z.any()).describe(PROFILE_DATA_DESC),
+    replace: z.boolean().optional().describe("Full replace instead of merge (default false)"),
+  },
+}, async ({ job_uuid, cv_uuid, profile_data, replace }) => {
+  try {
+    const result = await api.updateJobCvProfileData(job_uuid, cv_uuid, profile_data, replace ?? false);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+server.registerTool("sl_update_personal_info", {
+  description:
+    "Update account-level personal info shared across ALL CVs (not per-CV): name, contact, " +
+    "address, links, nationalities, date_of_birth. Only the fields you send are changed.",
+  inputSchema: {
+    name: z.string().optional().describe("Full name"),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    address_line1: z.string().optional(),
+    address_line2: z.string().optional(),
+    city: z.string().optional(),
+    postal_code: z.string().optional(),
+    country_code: z.string().optional().describe("e.g. CH, DE, AT"),
+    country: z.string().optional(),
+    linkedin: z.string().optional().describe("LinkedIn URL"),
+    website: z.string().optional(),
+    location: z.string().optional(),
+    github: z.string().optional().describe("GitHub URL"),
+    nationalities: z.array(z.string()).optional(),
+    date_of_birth: z.string().optional().describe("ISO date YYYY-MM-DD, or empty string to clear"),
+  },
+}, async (args) => {
+  try {
+    const result = await api.updatePersonalInfo(args as Record<string, unknown>);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
 // --- sl_update_job ---
 
 server.registerTool("sl_update_job", {
