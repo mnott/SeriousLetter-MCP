@@ -85,6 +85,7 @@ const server = new McpServer(
       "| `sl_export_cv_pdf` | Export a CV/profile as PDF |",
       "| `sl_add_note` | Add a note to a job |",
       "| `sl_list_notes` | List notes for a job |",
+      "| `sl_update_note` | Edit an existing note (text/category/date) |",
       "| `sl_list_conversations` | List saved conversations for a job |",
       "| `sl_save_conversation` | Save an analysis/evaluation as a conversation on a job |",
       "| `sl_get_conversation` | Get a saved conversation by ID |",
@@ -1177,6 +1178,27 @@ server.registerTool("sl_list_notes", {
 }, async ({ job_uuid }) => {
   try {
     const result = await api.listJobNotes(job_uuid);
+    return textResponse(result);
+  } catch (err) {
+    return errorResponse(err);
+  }
+});
+
+// --- sl_update_note ---
+
+server.registerTool("sl_update_note", {
+  description:
+    "Update/edit an existing note on a job. Use this to correct or revise a note instead of appending a correction. Only the fields you provide are changed; omitted fields are left untouched. Get note IDs from sl_list_notes.",
+  inputSchema: {
+    job_uuid: z.string().describe("UUID of the job"),
+    note_id: z.number().describe("ID of the note to update (from sl_list_notes)"),
+    text: z.string().optional().describe("New note content (markdown supported)"),
+    category: z.string().optional().describe("New category/type: general, evaluation, status_change, research"),
+    note_date: z.string().optional().describe("New note date in YYYY-MM-DD format"),
+  },
+}, async ({ job_uuid, note_id, text, category, note_date }) => {
+  try {
+    const result = await api.updateJobNote(job_uuid, note_id, { text, category, note_date });
     return textResponse(result);
   } catch (err) {
     return errorResponse(err);

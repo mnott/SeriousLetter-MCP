@@ -372,6 +372,18 @@ export async function addJobNote(
   return apiRequest("POST", `/api/v1/jobs/${jobUuid}/notes`, body);
 }
 
+export async function updateJobNote(
+  jobUuid: string,
+  noteId: number,
+  fields: { text?: string; category?: string; note_date?: string },
+): Promise<unknown> {
+  const body: Record<string, unknown> = {};
+  if (fields.text !== undefined) body.text = fields.text;
+  if (fields.category !== undefined) body.category = fields.category;
+  if (fields.note_date !== undefined) body.note_date = fields.note_date;
+  return apiRequest("PATCH", `/api/v1/jobs/${jobUuid}/notes/${noteId}`, body);
+}
+
 // --- Conversations ---
 
 export async function listConversations(jobUuid: string): Promise<unknown> {
